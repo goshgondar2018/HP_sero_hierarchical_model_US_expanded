@@ -23,7 +23,7 @@ data_model <- df_hp_usa_w_final %>%
 
 # remove study duplicates
 data_model_filtered=data_model%>%
-  filter(study_id!="SawJRhe2004")%>%
+  #filter(study_id!="SawJRhe2004")%>%
   filter(!(study_id=='GooJImm2003'&subgroup_n==384.00))%>%
   filter(!(study_id=='FelBirt2007'&subgroup_n==147.00))%>%
   filter(!(study_id=='ParClin2000'&subgroup_n==2080.00))%>%
