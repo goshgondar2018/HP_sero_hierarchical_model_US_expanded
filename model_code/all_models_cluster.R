@@ -1,0 +1,453 @@
+
+# *****************************************************************************
+#### Load necessary packages ####
+# *****************************************************************************
+suppressMessages({
+  library(dplyr)
+  library(ggplot2)
+  library(purrr)
+  library(readr)
+  library(tidyr) 
+  library(stringr)
+  library(runjags)
+  library(coda)
+})
+
+set.seed(123)
+
+# *****************************************************************************
+#### Parallel execution settings ####
+# *****************************************************************************
+n_chains <- 3
+n_cores_avail <- as.integer(Sys.getenv("SLURM_CPUS_PER_TASK", unset = NA))
+if (is.na(n_cores_avail)) n_cores_avail <- parallel::detectCores()
+n_cores_use <- min(n_chains, max(1, n_cores_avail))
+cat(sprintf("Using %d cores for %d chains.\n", n_cores_use, n_chains))
+
+out_dir <- "./results_cluster"
+fig_dir <- "./figures_cluster"
+dir.create(out_dir, showWarnings = FALSE, recursive = TRUE)
+dir.create(fig_dir, showWarnings = FALSE, recursive = TRUE)
+
+# *****************************************************************************
+#### Data prep (for all models) ####
+# *****************************************************************************
+load("data/df_hp_usa_w_final.Rdata")
+
+data_model <- df_hp_usa_w_final %>%
+  arrange(race_f, year) %>%
+  filter(race_f != "Other") %>%
+  mutate(
+    study_id_fac = factor(study_id),
+    race_fac     = factor(race_f),
+    time         = year - 1988,
+    bc_scaled    = birth_cohort - min(birth_cohort),
+    birth_cohort_cat = ifelse(birth_cohort < 1960, 0, 1)
+  )
+
+data_model_filtered <- data_model %>%
+  #filter(study_id != "SawJRhe2004") %>%
+  filter(!(study_id == "GooJImm2003" & subgroup_n == 384.00)) %>% # removing duplicates 
+  filter(!(study_id == "FelBirt2007" & subgroup_n == 147.00)) %>% # removing duplicates 
+  filter(!(study_id == "ParClin2000" & subgroup_n == 2080.00)) %>% # removing duplicates 
+  filter(!(study_id == "ParClin2000" & subgroup_n == 1040.00)) %>% # removing duplicates 
+  filter(!(study_id == "CorCanc1990" & age == 0.0410)) %>% # removing implausible early age reported prev
+  filter(!(study_id == "CorCanc1990" & age == 0.2500)) %>% # removing implausible early age reported prev
+  filter(!(study_id == "CorCanc1990" & age == 0.7085)) # removing implausible early age reported prev
+
+total_pop=sum(unique(data_model_filtered$subgroup_n))
+
+N          <- nrow(data_model_filtered)
+inds       <- as.numeric(data_model_filtered$race_fac)
+n_races    <- length(unique(data_model_filtered$race_fac))
+hp         <- round(data_model_filtered$HP)
+age        <- data_model_filtered$age
+bc_scaled  <- data_model_filtered$bc_scaled
+birth_cohort_cat <- data_model_filtered$birth_cohort_cat
+n          <- round(data_model_filtered$subgroup_n)
+OmegaB     <- diag(4)
+
+study_id_raw <- data_model_filtered$study_id
+study_id     <- as.numeric(as.factor(study_id_raw))
+n_studies    <- length(unique(study_id))
+
+study_lookup <- data.frame(
+  study_id_num = study_id,
+  study_abbrev = as.character(study_id_raw)
+) %>% distinct() %>% arrange(study_id_num)
+saveRDS(study_lookup, file.path(out_dir, "study_lookup.rds"))
+
+base_data <- list(
+  y = hp, x = age, bc = birth_cohort_cat,
+  n = n, N = N, inds = inds, OmegaB = OmegaB, n_races = n_races
+)
+
+# *****************************************************************************
+#### Model definitions ####
+# *****************************************************************************
+common_block <- "
+  ## race-specific random effects
+  for (j in 1:n_races){
+    par[j,1:4] ~ dmnorm(mub[1:4], taub[1:4,1:4])
+  }
+
+  ## fixed effects
+  mub[1] ~ dt(0, 1, 1)
+  mub[2] ~ dt(0, 1, 1)
+  mub[3] ~ dt(-3.2, 1, 3)
+  mub[4] ~ dt(0, 1, 1)
+
+  taub[1:4,1:4] ~ dwish(OmegaB[1:4,1:4], 5)
+  sigma2_b[1:4,1:4] <- inverse(taub[,])
+
+  for(k in 1:4){
+    var_b[k] <- sigma2_b[k,k]
+  }
+
+  cov_b[1] <- sigma2_b[2,1]
+  cov_b[2] <- sigma2_b[3,1]
+  cov_b[3] <- sigma2_b[3,2]
+  cov_b[4] <- sigma2_b[4,1]
+  cov_b[5] <- sigma2_b[4,2]
+  cov_b[6] <- sigma2_b[4,3]
+
+  ForMCMCConv[1:4]  <- mub
+  ForMCMCConv[5:8]  <- var_b
+  ForMCMCConv[9:14] <- cov_b
+"
+
+model_base <- paste0("model{
+  for (i in 1:N){
+    y[i]   ~ dbinom(pi[i], n[i])
+    pi[i]  ~ dbeta(a[i], b[i])
+    a[i]   <- p[i] * theta
+    b[i]   <- (1 - p[i]) * theta
+
+    ## bound p away from 0 so log() values not NaN
+    p[i]     <- 0.001 + 0.998 * p_raw[i]
+    p_raw[i] <- alpha[i] * (1 - exp(-(gamma[i] * x[i])))
+
+    logit(alpha[i]) <- par[inds[i],1] + par[inds[i],2]*bc[i]
+    log(gamma[i])   <- par[inds[i],3] + par[inds[i],4]*bc[i]
+  }
+
+  ## overdispersion parameter
+  log_theta ~ dnorm(3, 1)
+  theta     <- exp(log_theta)
+", common_block, "
+  ForMCMCConv[15] <- theta
+}")
+
+model_kappa_global <- paste0("model{
+  for (i in 1:N){
+    y[i]   ~ dbinom(pi[i], n[i])
+    pi[i]  ~ dbeta(a[i], b[i])
+    a[i]   <- p[i] * theta
+    b[i]   <- (1 - p[i]) * theta
+
+    p[i]     <- 0.001 + 0.998 * p_raw[i]
+    p_raw[i] <- alpha[i] * (1 - exp(-(gamma[i] * x[i])^kappa))
+
+    logit(alpha[i]) <- par[inds[i],1] + par[inds[i],2]*bc[i]
+    log(gamma[i])   <- par[inds[i],3] + par[inds[i],4]*bc[i]
+  }
+
+  log_theta ~ dnorm(3, 1)
+  theta     <- exp(log_theta)
+
+  ## population kappa shape
+  log_kappa ~ dnorm(0, 0.4)
+  kappa     <- exp(log_kappa)
+", common_block, "
+  ForMCMCConv[15] <- theta
+  ForMCMCConv[16] <- kappa
+}")
+
+model_kappa_partial <- paste0("model{
+  for (i in 1:N){
+    y[i]   ~ dbinom(pi[i], n[i])
+    pi[i]  ~ dbeta(a[i], b[i])
+    a[i]   <- p[i] * theta
+    b[i]   <- (1 - p[i]) * theta
+
+    p[i]     <- 0.001 + 0.998 * p_raw[i]
+    p_raw[i] <- alpha[i] * (1 - exp(-(gamma[i] * x[i])^kappa[inds[i]]))
+
+    logit(alpha[i]) <- par[inds[i],1] + par[inds[i],2]*bc[i]
+    log(gamma[i])   <- par[inds[i],3] + par[inds[i],4]*bc[i]
+  }
+
+  log_theta ~ dnorm(3, 1)
+  theta     <- exp(log_theta)
+
+  ## group-specific kappa shapes
+  for (j in 1:n_races){
+    log_kappa[j] ~ dnorm(mu_log_kappa, tau_log_kappa)
+    kappa[j]     <- exp(log_kappa[j])
+  }
+  mu_log_kappa  ~ dnorm(0, 1)
+  tau_log_kappa ~ dgamma(2, 1)
+  sd_log_kappa  <- 1/sqrt(tau_log_kappa)
+", common_block, "
+  ForMCMCConv[15] <- theta
+  ForMCMCConv[16] <- mu_log_kappa
+  ForMCMCConv[17] <- sd_log_kappa
+}")
+
+model_study_re <- paste0("model{
+  for (i in 1:N){
+    y[i]   ~ dbinom(pi[i], n[i])
+    pi[i]  ~ dbeta(a[i], b[i])
+    a[i]   <- p[i] * theta
+    b[i]   <- (1 - p[i]) * theta
+
+    p[i]     <- 0.001 + 0.998 * p_raw[i]
+    p_raw[i] <- alpha[i] * (1 - exp(-(gamma[i] * x[i])))
+
+    logit(alpha[i]) <- par[inds[i],1] + par[inds[i],2]*bc[i] + study_re[study_id[i]]
+    log(gamma[i])   <- par[inds[i],3] + par[inds[i],4]*bc[i]
+  }
+
+  log_theta ~ dnorm(3, 1)
+  theta     <- exp(log_theta)
+
+  ## study-level random effects for alpha
+  for (s in 1:n_studies){
+    study_re[s] ~ dnorm(0, tau_study)
+  }
+  tau_study ~ dgamma(2, 0.5)
+  sd_study  <- 1/sqrt(tau_study)
+", common_block, "
+  ForMCMCConv[15] <- theta
+  ForMCMCConv[16] <- sd_study
+}")
+
+model_kappa_partial_study_re <- paste0("model{
+  for (i in 1:N){
+    y[i]   ~ dbinom(pi[i], n[i])
+    pi[i]  ~ dbeta(a[i], b[i])
+    a[i]   <- p[i] * theta
+    b[i]   <- (1 - p[i]) * theta
+
+    p[i]     <- 0.001 + 0.998 * p_raw[i]
+    p_raw[i] <- alpha[i] * (1 - exp(-(gamma[i] * x[i])^kappa[inds[i]]))
+
+    logit(alpha[i]) <- par[inds[i],1] + par[inds[i],2]*bc[i] + study_re[study_id[i]]
+    log(gamma[i])   <- par[inds[i],3] + par[inds[i],4]*bc[i]
+  }
+
+  log_theta ~ dnorm(3, 1)
+  theta     <- exp(log_theta)
+
+  for (s in 1:n_studies){
+    study_re[s] ~ dnorm(0, tau_study)
+  }
+  tau_study ~ dgamma(2, 0.5)
+  sd_study  <- 1/sqrt(tau_study)
+
+  for (j in 1:n_races){
+    log_kappa[j] ~ dnorm(mu_log_kappa, tau_log_kappa)
+    kappa[j]     <- exp(log_kappa[j])
+  }
+  mu_log_kappa  ~ dnorm(0, 1)
+  tau_log_kappa ~ dgamma(2, 1)
+  sd_log_kappa  <- 1/sqrt(tau_log_kappa)
+", common_block, "
+  ForMCMCConv[15] <- theta
+  ForMCMCConv[16] <- mu_log_kappa
+  ForMCMCConv[17] <- sd_log_kappa
+  ForMCMCConv[18] <- sd_study
+}")
+
+# *****************************************************************************
+# Registry of all models
+# *****************************************************************************
+MODEL_LIST <- list(
+
+  base = list(
+    model_string = model_base,
+    data         = base_data,
+    monitor      = c("ForMCMCConv", "mub", "var_b", "par", "theta",
+                      "deviance")
+  ),
+
+  kappa_global = list(
+    model_string = model_kappa_global,
+    data         = base_data,
+    monitor      = c("ForMCMCConv", "mub", "var_b", "par", "theta", "kappa",
+                      "deviance")
+  ),
+
+  kappa_partial = list(
+    model_string = model_kappa_partial,
+    data         = base_data,
+    monitor      = c("ForMCMCConv", "mub", "var_b", "par", "theta",
+                      "mu_log_kappa", "sd_log_kappa", "kappa",
+                      "deviance")
+  ),
+
+  study_re = list(
+    model_string = model_study_re,
+    data         = c(base_data, list(n_studies = n_studies, study_id = study_id)),
+    monitor      = c("ForMCMCConv", "mub", "var_b", "par", "theta",
+                      "sd_study", "study_re",
+                      "deviance")
+  ),
+
+  kappa_partial_study_re = list(
+    model_string = model_kappa_partial_study_re,
+    data         = c(base_data, list(n_studies = n_studies, study_id = study_id)),
+    monitor      = c("ForMCMCConv", "mub", "var_b", "par", "theta",
+                      "mu_log_kappa", "sd_log_kappa", "kappa", "sd_study", "study_re",
+                      "deviance")
+  )
+  
+)
+
+# *****************************************************************************
+#### MCMC settings #### 
+# *****************************************************************************
+n_chains <- 3
+n_adapt  <- 10000
+n_burn   <- 500000
+n_post   <- 20000
+thinning <- 20
+
+inits_list <- list(
+  list(.RNG.name = "base::Wichmann-Hill",       .RNG.seed = 1),
+  list(.RNG.name = "base::Marsaglia-Multicarry", .RNG.seed = 2),
+  list(.RNG.name = "base::Super-Duper",          .RNG.seed = 3)
+)
+
+# *****************************************************************************
+#### Function to run and extract all results & convergence metrics by model #### 
+# *****************************************************************************
+fit_one_model <- function(model_name, spec) {
+
+  cat(sprintf("\n===== Fitting model: %s =====\n", model_name))
+  t0 <- Sys.time()
+  
+  fit <- run.jags(
+    model      = spec$model_string,
+    data       = spec$data,
+    inits      = inits_list,
+    monitor    = union(spec$monitor, "deviance"),
+    n.chains   = n_chains,
+    adapt      = n_adapt,
+    burnin     = n_burn,
+    sample     = n_post,
+    thin       = thinning,
+    method     = "parallel",
+    summarise  = FALSE
+  )
+
+  runtime_mins <- as.numeric(difftime(Sys.time(), t0, units = "mins"))
+  cat(sprintf("Finished %s in %.1f minutes (adapt=%d, burnin=%d, sample=%d, thin=%d).\n",
+              model_name, runtime_mins, n_adapt, n_burn, n_post, thinning))
+
+  mcmc_all <- as.mcmc.list(fit)
+
+  # convergence statistics part 1 (ForMCMCConv block)
+  conv_cols <- grep("^ForMCMCConv", varnames(mcmc_all))
+  mcmc_conv <- mcmc_all[, conv_cols, drop = FALSE]
+  gelman_conv <- tryCatch(gelman.diag(mcmc_conv, multivariate = FALSE),
+                           error = function(e) NULL)
+
+  # convergence statistics part 2 (par[] block (race-level REs))
+  par_cols <- grep("^par\\[", varnames(mcmc_all))
+  mcmc_par <- mcmc_all[, par_cols, drop = FALSE]
+  gelman_par <- tryCatch(gelman.diag(mcmc_par, multivariate = FALSE),
+                          error = function(e) NULL)
+
+  mean_gelman_conv <- if (!is.null(gelman_conv)) mean(gelman_conv$psrf[, 1]) else NA
+  mean_gelman_par  <- if (!is.null(gelman_par))  mean(gelman_par$psrf[, 1])  else NA
+  mean_gelman_all  <- mean(c(mean_gelman_conv, mean_gelman_par), na.rm = TRUE)
+
+  # DIC via variance-of-deviance pD approximation 
+  dev_col <- which(varnames(mcmc_all) == "deviance")
+  deviance_draws <- as.matrix(mcmc_all)[, dev_col]
+  deviance_mean  <- mean(deviance_draws)
+  pD_mean        <- var(deviance_draws) / 2
+  dic_val        <- deviance_mean + pD_mean
+
+  result <- list(
+    model_name       = model_name,
+    fit              = fit,
+    mcmc_all         = mcmc_all,
+    gelman_conv      = gelman_conv,
+    gelman_par       = gelman_par,
+    mean_gelman_conv = mean_gelman_conv,
+    mean_gelman_par  = mean_gelman_par,
+    mean_gelman_all  = mean_gelman_all,
+    deviance         = deviance_mean,
+    pD               = pD_mean,
+    dic              = dic_val,
+    runtime_mins     = runtime_mins,
+    n_chains         = n_chains,
+    n_adapt          = n_adapt,
+    n_burn           = n_burn,
+    n_post           = n_post,
+    thin             = thinning
+  )
+
+  saveRDS(result, file.path(out_dir, paste0("fit_", model_name, ".rds")))
+
+  summary_row <- data.frame(
+    model            = model_name,
+    DIC              = dic_val,
+    deviance         = deviance_mean,
+    pD               = pD_mean,
+    mean_PSRF_conv   = mean_gelman_conv,
+    mean_PSRF_par    = mean_gelman_par,
+    mean_PSRF_all    = mean_gelman_all,
+    runtime_mins     = runtime_mins,
+    n_burn           = n_burn,
+    n_post           = n_post,
+    thin             = thinning,
+    timestamp        = as.character(Sys.time())
+  )
+
+  write_csv(summary_row,
+            file.path(out_dir, paste0("summary_", model_name, ".csv")))
+
+  cat(sprintf("Model: %-15s DIC = %.1f | mean PSRF (all) = %.4f\n",
+              model_name, dic_val, mean_gelman_all))
+
+  summary_row
+}
+
+# *****************************************************************************
+#### Run one model or default of all models ####
+# *****************************************************************************
+args <- commandArgs(trailingOnly = TRUE)
+model_names <- names(MODEL_LIST)
+
+if (length(args) >= 1) {
+  run_names <- intersect(args, model_names)
+  if (length(run_names) == 0) {
+    stop("Unrecognized model name(s). Available: ", paste(model_names, collapse = ", "))
+  }
+} else {
+  run_names <- model_names
+}
+
+cat("Running model(s): ", paste(run_names, collapse = ", "), "\n")
+
+all_summaries <- purrr::map_dfr(run_names, function(nm) {
+  fit_one_model(nm, MODEL_LIST[[nm]])
+})
+
+# *****************************************************************************
+#### Combined comparison table ####
+# *****************************************************************************
+existing_csvs <- list.files(out_dir, pattern = "^summary_.*\\.csv$", full.names = TRUE)
+combined <- purrr::map_dfr(existing_csvs, read_csv, show_col_types = FALSE) %>%
+  distinct(model, .keep_all = TRUE) %>%
+  arrange(DIC)
+
+write_csv(combined, file.path(out_dir, "model_comparison_ALL.csv"))
+
+cat("\n===== Model comparison (sorted by DIC) =====\n")
+print(combined)
+
+cat(sprintf("\nAll results saved to: %s\n", normalizePath(out_dir)))
