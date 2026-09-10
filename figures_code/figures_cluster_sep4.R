@@ -23,8 +23,8 @@ data_model <- df_hp_usa_w_final %>%
          bc_scaled = birth_cohort - min(birth_cohort)) %>%
   mutate(birth_cohort_cat = ifelse(birth_cohort < 1960, 0, 1))
 
+# filter out duplicates
 data_model_filtered <- data_model %>%
-  #filter(study_id != "SawJRhe2004") %>%
   filter(!(study_id == 'GooJImm2003' & subgroup_n == 384.00)) %>%
   filter(!(study_id == 'FelBirt2007' & subgroup_n == 147.00)) %>%
   filter(!(study_id == 'ParClin2000' & subgroup_n == 2080.00)) %>%
@@ -33,6 +33,7 @@ data_model_filtered <- data_model %>%
   filter(!(study_id == 'CorCanc1990' & age == 0.2500)) %>%
   filter(!(study_id == 'CorCanc1990' & age == 0.7085))
 
+# summarize observed data prevalence points and CIs
 df_p_curves_obs <- data_model_filtered %>%
   #filter(age > 0) %>%
   mutate(era     = factor(ifelse(birth_cohort_cat == 0, "Pre-1960", "1960+"),
