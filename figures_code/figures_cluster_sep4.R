@@ -33,6 +33,19 @@ data_model_filtered <- data_model %>%
   filter(!(study_id == 'CorCanc1990' & age == 0.2500)) %>%
   filter(!(study_id == 'CorCanc1990' & age == 0.7085))
 
+df_p_curves_obs <- data_model_filtered %>%
+  #filter(age > 0) %>%
+  mutate(era     = factor(ifelse(birth_cohort_cat == 0, "Pre-1960", "1960+"),
+                          levels = c("Pre-1960", "1960+"))) %>%
+  group_by(race_fac, era, age = round(age)) %>%
+  summarise(Mean = mean(prev/100, na.rm = TRUE), LL= mean(prev_ci_lb/100, na.rm=TRUE), UL=mean(prev_ci_ub/100, na.rm=TRUE),
+            .groups = "drop") %>%
+  mutate(race=ifelse(race_fac=="Hispanic","Hispanic",
+ifelse(race_fac=="Non-Hispanic American Indian","NH American Indian",
+ifelse(race_fac=="Non-Hispanic Asian","NH Asian",
+ifelse(race_fac=="Non-Hispanic Black", "NH Black",
+ "NH White")))))
+
 ilogit <- function(logodds) 1 / (1 + exp(-logodds))
 
 n_races <- 5
@@ -242,7 +255,7 @@ process_model <- function(model_name, cfg) {
 
       foi_den <- 1 - p_mat * one_minus_exp + 1e-10
       foi_mat <- foi_num / foi_den
-      foi_mat[1, ] <- NA
+      #foi_mat[1, ] <- NA
 
       if (b_idx == 1) {
         max_prev_draws_pre[r, ]  <- p_raw_mat[n_age, ]
@@ -290,7 +303,7 @@ process_model <- function(model_name, cfg) {
 
   df_max_prev_RR <- bind_rows(
     summarize_max_prev_RR(max_prev_draws_pre,  "Pre-1960"),
-    summarize_max_prev_RR(max_prev_draws_post, "Post-1960")
+    summarize_max_prev_RR(max_prev_draws_post, "1960+")
   ) %>%
     mutate(era = factor(era, levels = era_labels))
 
@@ -298,41 +311,97 @@ process_model <- function(model_name, cfg) {
 
   df_max_prev_RD <- bind_rows(
     summarize_max_prev_RD(max_prev_draws_pre,  "Pre-1960"),
-    summarize_max_prev_RD(max_prev_draws_post, "Post-1960")
+    summarize_max_prev_RD(max_prev_draws_post, "1960+")
   ) %>%
     mutate(era = factor(era, levels = era_labels))
 
   write_csv(df_max_prev_RD, paste0("results/max_prev_RD_", tag, ".csv"))
 
-  df_foi_plot <- df_hp_hat_race_final %>% filter(age > 0, Mean < 1) %>%
+  df_foi_plot <- df_hp_hat_race_final %>%  #filter(age > 0, Mean < 1) %>%
     mutate(era = factor(era, levels = era_labels))
 
   ggplot(df_foi_plot, aes(x = age, y = Mean, color = era, fill = era, group = era)) +
     geom_line(linewidth = 1) +
     geom_ribbon(aes(ymin = LB, ymax = UB), alpha = 0.2, color = NA) +
     facet_wrap(~race, ncol = 3) +
-    scale_color_manual(values = c("Pre-1960" = "#336689", "Post-1960" = "#E65C4E")) +
-    scale_fill_manual(values  = c("Pre-1960" = "#336689", "Post-1960" = "#E65C4E")) +
+    scale_color_manual(values = c("Pre-1960" = "#336689", "1960+" = "#E65C4E")) +
+    scale_fill_manual(values  = c("Pre-1960" = "#336689", "1960+" = "#E65C4E")) +
     scale_x_continuous(breaks = seq(0, 90, by = 20)) +
     xlab("Age") + ylab("Predicted force of infection") +
     labs(color = "Birth cohort era", fill = "Birth cohort era") +
-    theme_bw(base_size = 13) + theme(legend.position = "bottom", strip.text = element_text(face = "bold"))
+    theme_bw(base_size = 13) + theme(legend.position = "bottom", strip.text = element_text(face = "bold",size=20),
+  axis.legend=element_text(size=30),
+  axis.legend.title=element_text(size=30),
+  axis.text.x=element_text(size=20),
+  axis.text.y=element_text(size=20),
+  axis.title.x=element_text(size=20),
+  axis.title.y=element_text(size=20))
   ggsave(paste0("./figures_aug20_2026/binary_cohort_figs/foi_curves_by_race_era_", tag, ".png"), width = 12, height = 8)
 
-  df_p_plot <- df_p_hat_race_final %>% filter(age > 0) %>%
+# combined predicted and observed prevalence plot
+  df_p_plot <- df_p_hat_race_final %>% # filter(age > 0) %>%
     mutate(era = factor(era, levels = era_labels))
+
+  
+  ggplot() +
+  geom_ribbon(data = df_p_plot,
+              aes(x = age, ymin = LB, ymax = UB,
+                  fill = era, group = era),
+              alpha = 0.2, color = NA) +
+  geom_line(data = df_p_plot,
+            aes(x = age, y = Mean, color = era, group = era),
+            size = 1) +
+  geom_point(data = df_p_curves_obs,
+             aes(x = age, y = Mean, color = era),
+             size = 1, alpha = 0.8, shape = 16)+
+  geom_errorbar(data = df_p_curves_obs,
+                aes(x = age, ymin = LL, ymax = UL, color = era),
+                width = 1.5, alpha = 0.6, size = 0.4) +
+  facet_wrap(~race, ncol = 3, scales = "fixed") +
+  scale_color_manual(values = c("Pre-1960" = "#336689",
+                                "1960+" = "#E65C4E")) +
+  scale_fill_manual(values  = c("Pre-1960" = "#336689",
+                                "1960+" = "#E65C4E")) +
+  scale_x_continuous(breaks = seq(0, 90, by = 20)) +
+  scale_y_continuous(breaks = seq(0, 1, by = 0.2),
+                     limits = c(0, 1)) +
+  xlab("Age") +
+  ylab("Seroprevalence") +
+  labs(color   = "Birth cohort era",
+       fill    = "Birth cohort era") +
+  theme_bw(base_size = 14) +
+  theme(legend.position  = "bottom",
+        legend.text      = element_text(size = 15),
+        legend.title = element_text(size=18),
+        strip.background = element_rect(fill  = "transparent",
+                                        color = "transparent"),
+        strip.text       = element_text(size = 12, face = "bold"),
+        axis.text.x      = element_text(size = 15),
+        axis.text.y      = element_text(size = 15),
+      axis.title.x=element_text(size=15),
+      axis.title.y=element_text(size=15)) +
+  guides(color = guide_legend(override.aes = list(size = 3)),
+         fill  = guide_legend(override.aes = list(alpha = 0.4)))
+  ggsave(paste0("./figures_aug20_2026/binary_cohort_figs/predicted_vs_observed_prev_", tag, ".png"), width = 12, height = 8)
+
+  #df_p_plot <- df_p_hat_race_final %>% # filter(age > 0) %>%
+   # mutate(era = factor(era, levels = era_labels))
 
   ggplot(df_p_plot, aes(x = age, y = Mean, color = era, fill = era, group = era)) +
     geom_line(linewidth = 1) +
     geom_ribbon(aes(ymin = LB, ymax = UB), alpha = 0.2, color = NA) +
     facet_wrap(~race, ncol = 3) +
-    scale_color_manual(values = c("Pre-1960" = "#336689", "Post-1960" = "#E65C4E")) +
-    scale_fill_manual(values  = c("Pre-1960" = "#336689", "Post-1960" = "#E65C4E")) +
+    scale_color_manual(values = c("Pre-1960" = "#336689", "1960+" = "#E65C4E")) +
+    scale_fill_manual(values  = c("Pre-1960" = "#336689", "1960+" = "#E65C4E")) +
     scale_x_continuous(breaks = seq(0, 90, by = 20)) +
     scale_y_continuous(breaks = seq(0, 1, by = 0.2), limits = c(0, 1)) +
     xlab("Age") + ylab("Predicted seroprevalence") +
     labs(color = "Birth cohort era", fill = "Birth cohort era") +
-    theme_bw(base_size = 13) + theme(legend.position = "bottom", strip.text = element_text(face = "bold"))
+    theme_bw(base_size = 13) + theme(legend.position = "bottom", strip.text = element_text(face = "bold"),
+  axis.text.x=element_text(size=20),
+  axis.text.y=element_text(size=20),
+  axis.title.x=element_text(size=20),
+  axis.title.y=element_text(size=20))
   ggsave(paste0("./figures_aug20_2026/binary_cohort_figs/prev_curves_by_race_era_", tag, ".png"), width = 12, height = 8)
 
   max_prev <- df_p_hat_race_final %>% filter(age == fin_age) %>%
@@ -343,7 +412,7 @@ process_model <- function(model_name, cfg) {
     geom_pointrange(size = 1, position = position_dodge(width = 0.6)) +
     geom_errorbar(width = 0.5, size = 1, position = position_dodge(width = 0.6)) +
     scale_y_continuous(breaks = seq(0, 1, by = 0.1), limits = c(0, 1)) +
-    scale_shape_manual(values = c("Pre-1960" = 16, "Post-1960" = 17)) +
+    scale_shape_manual(values = c("Pre-1960" = 16, "1960+" = 17)) +
     xlab("") + ylab("Max seroprevalence (age 90)") +
     labs(color = "Birth cohort era", shape = "Birth cohort era") +
     theme_bw(base_size = 16) +
@@ -354,7 +423,10 @@ process_model <- function(model_name, cfg) {
         legend.text        = element_text(size = 14),
         legend.key.size    = unit(1, "cm"),
         strip.background   = element_rect(fill = "transparent", color = "transparent"),
-        axis.text.x        = element_text(hjust = 1, vjust = 1, angle = 45)) 
+  axis.text.x=element_text(size=20,hjust=1,vjust=1,angle=45),
+  axis.text.y=element_text(size=20),
+  axis.title.x=element_text(size=20),
+  axis.title.y=element_text(size=20))
   ggsave(paste0("./figures_aug20_2026/binary_cohort_figs/max_prev_both_eras_", tag, ".png"), width = 10, height = 8)
 
   prev_at_5 <- df_p_hat_race_final %>% filter(age == 5) %>%
@@ -365,7 +437,7 @@ process_model <- function(model_name, cfg) {
     geom_pointrange(size = 1, position = position_dodge(width = 0.6)) +
     geom_errorbar(width = 0.5, size = 1, position = position_dodge(width = 0.6)) +
     scale_y_continuous(breaks = seq(0, 1, by = 0.1), limits = c(0, 1)) +
-    scale_shape_manual(values = c("Pre-1960" = 16, "Post-1960" = 17)) +
+    scale_shape_manual(values = c("Pre-1960" = 16, "1960+" = 17)) +
     xlab("") + ylab("Max seroprevalence (age 5)") +
     labs(color = "Birth cohort era", shape = "Birth cohort era") +
     theme_bw(base_size = 16) +
@@ -376,7 +448,10 @@ process_model <- function(model_name, cfg) {
         legend.text        = element_text(size = 14),
         legend.key.size    = unit(1, "cm"),
         strip.background   = element_rect(fill = "transparent", color = "transparent"),
-        axis.text.x        = element_text(hjust = 1, vjust = 1, angle = 45)) 
+  axis.text.x=element_text(size=20,hjust=1,vjust=1,angle=45),
+  axis.text.y=element_text(size=20),
+  axis.title.x=element_text(size=20),
+  axis.title.y=element_text(size=20))
   ggsave(paste0("./figures_aug20_2026/binary_cohort_figs/prev_at_5_both_eras_", tag, ".png"), width = 10, height = 8)
 
   max_prev_percent_change_summarized=max_prev%>%
@@ -428,6 +503,25 @@ process_model <- function(model_name, cfg) {
   df_aoi_final <- bind_rows(aoi_groups)
   write_csv(df_aoi_final, paste0("results/median_age_inf_", tag, ".csv"))
 
+  df_aoi_final_plot=df_aoi_final%>%
+    mutate(era=factor(era, levels = era_labels))
+
+  ggplot(df_aoi_final_plot,
+       aes(x = reorder(race,Mean,decreasing=TRUE), y = Mean, 
+           ymin = LB, ymax = UB, group = era, color = era, shape = era)) +
+    #geom_point()+
+    geom_pointrange(size = 1, position = position_dodge(width = 0.6))+
+    geom_errorbar(width = 0.5, size = 1, position = position_dodge(width = 0.6)) +
+    #facet_wrap(~era, scales = "fixed")+
+    theme_bw(base_size = 14) +
+    theme(legend.position  = "bottom", axis.text.x=element_text(angle=45,hjust=1,vjust=1,size=20),
+  legend.text=element_text(size=20),legend.title=element_text(size=20),axis.text.y=element_text(size=20),
+        axis.title.x=element_blank(), axis.title.y=element_text(size=20))+ylab("Median age of infection (years)")
+  
+  ggsave(paste0("./figures_aug20_2026/binary_cohort_figs/median_age_inf_", tag, ".png"),width = 10, height = 8) #paste0("./figures_aug20_2026/binary_cohort_figs/prev_at_5_both_eras_", tag, ".png"), width = 10, height = 8)
+
+
+  
   alpha0_labels <- paste0("alpha intercept ", race_labels)
   alpha1_labels <- paste0("alpha slope ", race_labels)
   gamma0_labels <- paste0("gamma intercept ", race_labels)
@@ -456,6 +550,7 @@ process_model <- function(model_name, cfg) {
       kappa_draws  <- matrix(m_kappa[1, ], ncol = 1)  # single shared value, all races identical
       kappa_labels <- "kappa (global)"
       kappa_mean=mean(kappa_draws)
+      kappa_median=median(kappa_draws)
       kappa_LQ=quantile(kappa_draws,0.025)
       kappa_UQ=quantile(kappa_draws,0.975)
       prob_kappa_greater_than_1=mean(kappa_draws>1)
@@ -463,6 +558,7 @@ process_model <- function(model_name, cfg) {
       kappa_draws  <- t(m_kappa)
       kappa_labels <- paste0("kappa ", race_labels)
       kappa_mean=colMeans(kappa_draws)
+      kappa_median=colMedians(kappa_draws)
       kappa_LQ=apply(kappa_draws,2,quantile,probs=0.025)
       kappa_UQ=apply(kappa_draws,2,quantile,probs=0.975)
       prob_kappa_greater_than_1=colMeans(kappa_draws>1)
@@ -470,7 +566,7 @@ process_model <- function(model_name, cfg) {
     print(kappa_mean)
     print(as.numeric(kappa_LQ))
     print(as.numeric(kappa_UQ))
-    write_csv(cbind.data.frame(mean=kappa_mean,LQ=as.numeric(kappa_LQ),UQ=as.numeric(kappa_UQ),
+    write_csv(cbind.data.frame(mean=kappa_mean,median=kappa_median,LQ=as.numeric(kappa_LQ),UQ=as.numeric(kappa_UQ),
                               prob_greater_than_1=prob_kappa_greater_than_1),
                               paste0("./results/kappa_summary_",tag, ".csv"))
 
@@ -514,4 +610,6 @@ results_all <- list()
 for (model_name in names(model_configs)) {
   results_all[[model_name]] <- process_model(model_name, model_configs[[model_name]])
 }
+
+
 
