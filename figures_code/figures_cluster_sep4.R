@@ -13,48 +13,64 @@ library(gt)
 # *****************************************************************************
 
 load("data/df_hp_usa_w_final.Rdata")
+second_Nom_study=data.frame(study_id="NomJInf2002",study_n=261.00,subgroup="Japanese",subgroup_race_ethnicity="Japanese",
+subgroup_n=261.00,age=72.5,time_period=1982,birth_cohort=1909.5,seer_race_ethnicity="Non-Hispanic Asian or Pacific Islander",
+race_ethnicity_notes=NA,hp_num=174+19,hp_denom=261.00,hp_pct=73.9,hp_notes=NA,version=NA,immigrant_n=0.16*261,year_pub=2002,
+year=NA,race_f="Non-Hispanic Asian",total=261.00,HP=174+19,prev=74,prev_ci_lb=68,prev_ci_ub=79,birthplaceUS=NA)
 
 data_model <- df_hp_usa_w_final %>%
   arrange(race_f, year) %>%
-  filter(race_f != 'Other') %>%
-  mutate(study_id_fac = factor(study_id),
-         race_fac = factor(race_f),
-         time = year - 1988,
-         bc_scaled = birth_cohort - min(birth_cohort)) %>%
-  mutate(birth_cohort_cat = ifelse(birth_cohort < 1960, 0, 1))
+  filter(race_f != "Other") 
 
-# filter out duplicates
-data_model_filtered <- data_model %>%
+data_model_complete=rbind.data.frame(data_model,second_Nom_study)%>%
+  mutate(
+    study_id_fac = factor(study_id),
+    race_fac     = factor(race_f),
+    time         = year - 1988,
+    bc_scaled    = birth_cohort - min(birth_cohort),
+    birth_cohort_cat = ifelse(birth_cohort < 1960, 0, 1)
+  )
+
+data_model_filtered <- data_model_complete %>%
+  filter(study_id != 'CorCanc1990') %>%
+  filter(study_id != 'GraGast1991') %>%
+  filter(study_id != 'SawJRhe2004') %>%
+  filter(study_id != 'MuhJInf2015') %>%
+  filter(study_id != 'EppCanc2011_3') %>%
   filter(!(study_id == 'GooJImm2003' & subgroup_n == 384.00)) %>%
   filter(!(study_id == 'FelBirt2007' & subgroup_n == 147.00)) %>%
   filter(!(study_id == 'ParClin2000' & subgroup_n == 2080.00)) %>%
-  filter(!(study_id == 'ParClin2000' & subgroup_n == 1040.00)) %>%
-  filter(!(study_id == 'CorCanc1990' & age == 0.0410)) %>%
-  filter(!(study_id == 'CorCanc1990' & age == 0.2500)) %>%
-  filter(!(study_id == 'CorCanc1990' & age == 0.7085))
+  filter(!(study_id == 'ParClin2000' & subgroup_n == 1040.00))
 
-# summarize observed data prevalence points and CIs
+total_pop=sum(unique(data_model_filtered$subgroup_n))
+
+# observed prevalence data points
 df_p_curves_obs <- data_model_filtered %>%
-  #filter(age > 0) %>%
+  filter(age > 0) %>%
   mutate(era     = factor(ifelse(birth_cohort_cat == 0, "Pre-1960", "1960+"),
                           levels = c("Pre-1960", "1960+"))) %>%
   group_by(race_fac, era, age = round(age)) %>%
   summarise(Mean = mean(prev/100, na.rm = TRUE), LL= mean(prev_ci_lb/100, na.rm=TRUE), UL=mean(prev_ci_ub/100, na.rm=TRUE),
             .groups = "drop") %>%
   mutate(race=ifelse(race_fac=="Hispanic","Hispanic",
-ifelse(race_fac=="Non-Hispanic American Indian","NH American Indian",
-ifelse(race_fac=="Non-Hispanic Asian","NH Asian",
-ifelse(race_fac=="Non-Hispanic Black", "NH Black",
- "NH White")))))
+ifelse(race_fac=="Non-Hispanic American Indian","AI/AN",
+ifelse(race_fac=="Non-Hispanic Asian","API",
+ifelse(race_fac=="Non-Hispanic Black", "NHB",
+ "NHW")))))
 
 ilogit <- function(logodds) 1 / (1 + exp(-logodds))
 
 n_races <- 5
 fin_age <- 90
 race_index  <- 1:5
-race_labels <- c("Hispanic", "NH American Indian", "NH Asian", "NH Black", "NH White")
+race_labels <- c("Hispanic", "AI/AN", "API", "NHB", "NHW")
 race_short  <- c("H", "AIAN", "NHA", "NHB", "NHW")
-era_labels  <- c("Pre-1960", "Post-1960")
+race_titles <- c("Hispanic",
+                 "Non-Hispanic American Indian & Alaska Native",
+                 "Non-Hispanic Asian",
+                 "Non-Hispanic Black",
+                 "Non-Hispanic White")
+era_labels  <- c("Pre-1960", "1960+")
 
 dir.create("figures_aug20_2026", showWarnings = FALSE)
 dir.create("results", showWarnings = FALSE)
@@ -65,6 +81,7 @@ get_vec <- function(mat_all, base_name, idx) {
 get_par_matrix <- function(mat_all, param_col, n_races) {
   mat_all[, paste0("par[", 1:n_races, ",", param_col, "]"), drop = FALSE]
 }
+
 
 # *****************************************************************************
 # Registry of all models
@@ -94,6 +111,11 @@ model_configs <- list(
     file = "./cluster_output/fit_kappa_partial_study_re.rds",
     kappa_mode = "partial", has_study_re = TRUE,
     tag = "KappaPartialStudyRE"
+    ),
+  kappa_global_study_re = list(
+    file = "./cluster_output/fit_kappa_global_study_re.rds",
+    kappa_mode = "global", has_study_re = TRUE,
+    tag = "KappaGlobalStudyRE"
   )
 )
 
@@ -106,15 +128,20 @@ model_configs <- list(
 generate_traceplot_function <- function(draws, labels, ncol_facet = 1) {
   draws_df <- as.data.frame(draws)
   colnames(draws_df) <- labels
-  draws_df$iteration <- seq_len(nrow(draws_df))
-  draws_df_long <- pivot_longer(draws_df, cols = -iteration,
+  draws_df$iteration <- rep(seq(1,2000),3) #seq_len(nrow(draws_df))
+  draws_df$chain <- c(rep('1',20000),rep('2',20000),rep('3',20000)) 
+
+  draws_df_long <- pivot_longer(draws_df, cols = -c(iteration,chain),
                                  names_to = "parameter", values_to = "value")
-  ggplot(draws_df_long, aes(x = iteration, y = value, color = parameter)) +
-    geom_line(alpha = 0.7) +
+  
+  ggplot(draws_df_long, aes(x = iteration, y = value, color = chain)) +
+    geom_line(alpha = 0.7,size=1) +
     facet_wrap(~ parameter, scales = "free_y", ncol = ncol_facet) +
     theme_minimal() +
     labs(x = "Iteration", y = "Estimate") +
-    theme(legend.position = "none",
+    theme(legend.position = "bottom",
+          legend.title=element_text(size=15),
+          legend.text=element_text(size=15),
           axis.text.x = element_text(size = 12), axis.text.y = element_text(size = 12),
           axis.title.x = element_text(size = 16), axis.title.y = element_text(size = 16),
           strip.text = element_text(size = 10))
@@ -398,7 +425,7 @@ process_model <- function(model_name, cfg) {
     scale_y_continuous(breaks = seq(0, 1, by = 0.2), limits = c(0, 1)) +
     xlab("Age") + ylab("Predicted seroprevalence") +
     labs(color = "Birth cohort era", fill = "Birth cohort era") +
-    theme_bw(base_size = 13) + theme(legend.position = "bottom", strip.text = element_text(face = "bold"),
+    theme_bw(base_size = 13) + theme(legend.position = "bottom", strip.text = element_text(face = "bold",size=20),
   axis.text.x=element_text(size=20),
   axis.text.y=element_text(size=20),
   axis.title.x=element_text(size=20),
@@ -579,29 +606,65 @@ process_model <- function(model_name, cfg) {
 
   if (cfg$has_study_re && exists("study_lookup")) {
     study_labels <- study_lookup$study_abbrev
-    generate_traceplot_function(t(study_re_draws), study_labels, ncol_facet = 5)
-    ggsave(paste0("./figures_aug20_2026/binary_cohort_figs/study_re_traceplot_", tag, ".png"), width = 16, height = 20)
-    generate_densplot_function(t(study_re_draws), study_labels, ncol_facet = 5)
-    ggsave(paste0("./figures_aug20_2026/binary_cohort_figs/study_re_densplot_", tag, ".png"), width = 16, height = 20)
   }
 
   if (!is.null(cluster_fit$gelman_conv)) {
     gelman_multivariate_PSRF <- as.data.frame(cluster_fit$gelman_conv$psrf[, 1])
     colnames(gelman_multivariate_PSRF) <- "PSRF"
-    gelman_multivariate_PSRF$param <- rownames(cluster_fit$gelman_conv$psrf)
+    if(model_name=="base") {
+      gelman_multivariate_PSRF$param <- c("mu_alpha0", "mu_alpha1","mu_gamma0","mu_gamma1",
+                                        "var_alpha0", "var_alpha1", "var_gamma0", "var_gamma1",
+                                        "covar_alpha0_1", "covar_alpha0_gamma0", "covar_gamma0_alpha1","covar_gamma1_alpha0","covar_gamma1_alpha1","covar_gamma0_1",
+                                      "overdispersion_parameter")
+    }
+    else if(model_name=='kappa_global') {
+      gelman_multivariate_PSRF$param <- c("mu_alpha0", "mu_alpha1","mu_gamma0","mu_gamma1",
+                                        "var_alpha0", "var_alpha1", "var_gamma0", "var_gamma1",
+                                        "covar_alpha0_1", "covar_alpha0_gamma0", "covar_gamma0_alpha1","covar_gamma1_alpha0","covar_gamma1_alpha1","covar_gamma0_1",
+                                      "overdispersion_parameter","kappa")
+    }
+    else if(model_name=='kappa_partial') {
+      gelman_multivariate_PSRF$param <- c("mu_alpha0", "mu_alpha1","mu_gamma0","mu_gamma1",
+                                        "var_alpha0", "var_alpha1", "var_gamma0", "var_gamma1",
+                                        "covar_alpha0_1", "covar_alpha0_gamma0", "covar_gamma0_alpha1","covar_gamma1_alpha0","covar_gamma1_alpha1","covar_gamma0_1",
+                                      "overdispersion_parameter","mu_log_kappa", "sd_log_kappa")
+    }
+     else if(model_name=='study_re') {
+      gelman_multivariate_PSRF$param <- c("mu_alpha0", "mu_alpha1","mu_gamma0","mu_gamma1",
+                                        "var_alpha0", "var_alpha1", "var_gamma0", "var_gamma1",
+                                        "covar_alpha0_1", "covar_alpha0_gamma0", "covar_gamma0_alpha1","covar_gamma1_alpha0","covar_gamma1_alpha1","covar_gamma0_1",
+                                      "overdispersion_parameter","sd_study")
+    }
+    else if(model_name=='kappa_global_study_re') {
+      gelman_multivariate_PSRF$param <- c("mu_alpha0", "mu_alpha1","mu_gamma0","mu_gamma1",
+                                        "var_alpha0", "var_alpha1", "var_gamma0", "var_gamma1",
+                                        "covar_alpha0_1", "covar_alpha0_gamma0", "covar_gamma0_alpha1","covar_gamma1_alpha0","covar_gamma1_alpha1","covar_gamma0_1",
+                                      "overdispersion_parameter","kappa", "sd_study")
+    }
+    else {
+        gelman_multivariate_PSRF$param <- c("mu_alpha0", "mu_alpha1","mu_gamma0","mu_gamma1",
+                                        "var_alpha0", "var_alpha1", "var_gamma0", "var_gamma1",
+                                        "covar_alpha0_1", "covar_alpha0_gamma0", "covar_gamma0_alpha1","covar_gamma1_alpha0","covar_gamma1_alpha1","covar_gamma0_1",
+                                      "overdispersion_parameter","mu_log_kappa", "sd_log_kappa", "sd_study")
+     }
+    #rownames(cluster_fit$gelman_conv$psrf)
     gt_mv <- gt(cbind.data.frame(parameter = gelman_multivariate_PSRF$param,
                                   PSRF = gelman_multivariate_PSRF$PSRF))
     gtsave(gt_mv, paste0("./figures_aug20_2026/binary_cohort_figs/multivariate_PSRF_", tag, ".png"))
-  }
+    }
   if (!is.null(cluster_fit$gelman_par)) {
     gelman_univariate_PSRF <- as.data.frame(cluster_fit$gelman_par$psrf[, 1])
     colnames(gelman_univariate_PSRF) <- "PSRF"
-    gelman_univariate_PSRF$param <- rownames(cluster_fit$gelman_par$psrf)
+    gelman_univariate_PSRF$param <- c("log_alpha0_H", "log_alpha0_AIAN","log_alpha0_API","log_alpha0_NHB","log_alpha0_NHW",
+                                      "log_alpha1_H", "log_alpha1_AIAN","log_alpha1_API","log_alpha1_NHB","log_alpha1_NHW",
+                                      "log_gamma0_H", "log_gamma0_AIAN","log_gamma0_API","log_gamma0_NHB","log_gamma0_NHW",
+                                      "log_gamma1_H", "log_gamma1_AIAN","log_gamma1_API","log_gamma1_NHB","log_gamma1_NHW")
+    #rownames(cluster_fit$gelman_par$psrf)
     gt_uv <- gt(cbind.data.frame(parameter = gelman_univariate_PSRF$param,
                                   PSRF = gelman_univariate_PSRF$PSRF))
     gtsave(gt_uv, paste0("./figures_aug20_2026/binary_cohort_figs/univariate_PSRF_", tag, ".png"))
   }
-
+    
   cat("Finished:", model_name, "\n")
   invisible(list(df_p = df_p_hat_race_final, df_foi = df_hp_hat_race_final,
                  df_aoi = df_aoi_final,df_rr = df_max_prev_RR, df_rd = df_max_prev_RD))
