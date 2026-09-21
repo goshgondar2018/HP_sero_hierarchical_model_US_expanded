@@ -20,6 +20,7 @@ set.seed(123)
 # *****************************************************************************
 #### Parallel execution settings ####
 # *****************************************************************************
+n_chains <- 3
 n_cores_avail <- as.integer(Sys.getenv("SLURM_CPUS_PER_TASK", unset = NA))
 if (is.na(n_cores_avail)) n_cores_avail <- parallel::detectCores()
 n_cores_use <- min(n_chains, max(1, n_cores_avail))

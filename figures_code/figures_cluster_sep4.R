@@ -73,6 +73,7 @@ race_titles <- c("Hispanic",
 era_labels  <- c("Pre-1960", "1960+")
 
 dir.create("figures_aug20_2026", showWarnings = FALSE)
+dir.create("figures_aug20_2026/binary_cohort_figs", showWarnings = FALSE, recursive = TRUE)
 dir.create("results", showWarnings = FALSE)
 
 get_vec <- function(mat_all, base_name, idx) {
@@ -88,32 +89,32 @@ get_par_matrix <- function(mat_all, param_col, n_races) {
 # *****************************************************************************
 model_configs <- list(
   base = list(
-    file = "./cluster_output/fit_base.rds",
+    file = "./results_cluster/fit_base.rds",
     kappa_mode = "none", has_study_re = FALSE,
     tag = "Base"
   ),
   kappa_global = list(
-    file = "./cluster_output/fit_kappa_global.rds",
+    file = "./results_cluster/fit_kappa_global.rds",
     kappa_mode = "global", has_study_re = FALSE,
     tag = "KappaGlobal"
   ),
   kappa_partial = list(
-    file = "./cluster_output/fit_kappa_partial.rds",
+    file = "./results_cluster/fit_kappa_partial.rds",
     kappa_mode = "partial", has_study_re = FALSE,
     tag = "KappaPartial"
   ),
   study_re = list(
-    file = "./cluster_output/fit_study_re.rds",
+    file = "./results_cluster/fit_study_re.rds",
     kappa_mode = "none", has_study_re = TRUE,
     tag = "StudyRE"
   ),
   kappa_partial_study_re = list(
-    file = "./cluster_output/fit_kappa_partial_study_re.rds",
+    file = "./results_cluster/fit_kappa_partial_study_re.rds",
     kappa_mode = "partial", has_study_re = TRUE,
     tag = "KappaPartialStudyRE"
     ),
   kappa_global_study_re = list(
-    file = "./cluster_output/fit_kappa_global_study_re.rds",
+    file = "./results_cluster/fit_kappa_global_study_re.rds",
     kappa_mode = "global", has_study_re = TRUE,
     tag = "KappaGlobalStudyRE"
   )
@@ -125,11 +126,13 @@ model_configs <- list(
 
 # Generalized trace/density plot functions  
 
-generate_traceplot_function <- function(draws, labels, ncol_facet = 1) {
+generate_traceplot_function <- function(draws, labels, ncol_facet = 1, n_chains = 3) {
   draws_df <- as.data.frame(draws)
   colnames(draws_df) <- labels
-  draws_df$iteration <- rep(seq(1,2000),3) #seq_len(nrow(draws_df))
-  draws_df$chain <- c(rep('1',20000),rep('2',20000),rep('3',20000)) 
+  n_iter_per_chain <- nrow(draws_df) / n_chains
+  stopifnot(n_iter_per_chain == round(n_iter_per_chain))
+  draws_df$iteration <- rep(seq_len(n_iter_per_chain), n_chains)
+  draws_df$chain <- rep(factor(seq_len(n_chains)), each = n_iter_per_chain)
 
   draws_df_long <- pivot_longer(draws_df, cols = -c(iteration,chain),
                                  names_to = "parameter", values_to = "value")
@@ -170,8 +173,8 @@ summarize_max_prev_RD <- function(mat, era_label) {
   stopifnot(nrow(mat) == length(race_labels))
   rownames(mat) <- race_labels       # name rows so we don't rely on position
 
-  # divide every column (iteration) by that same iteration's NH White row value
-  rr_mat <- sweep(mat, 2, mat["NH White", ], FUN = "-")
+  # subtract every column (iteration)'s NHW row value (referent group)
+  rr_mat <- sweep(mat, 2, mat["NHW", ], FUN = "-")
 
   data.frame(
     Parameters = rownames(rr_mat),
@@ -189,8 +192,8 @@ summarize_max_prev_RR <- function(mat, era_label) {
   stopifnot(nrow(mat) == length(race_labels))
   rownames(mat) <- race_labels       # name rows so we don't rely on position
 
-  # divide every column (iteration) by that same iteration's NH White row value
-  rr_mat <- sweep(mat, 2, mat["NH White", ], FUN = "/")
+  # divide every column (iteration) by that same iteration's NHW row value (referent group)
+  rr_mat <- sweep(mat, 2, mat["NHW", ], FUN = "/")
 
   data.frame(
     Parameters = rownames(rr_mat),

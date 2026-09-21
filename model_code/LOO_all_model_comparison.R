@@ -20,7 +20,7 @@ dir.create("results", showWarnings = FALSE)
 # *****************************************************************************
 load("data/df_hp_usa_w_final.Rdata")
 
-second_Nom_study=data.frame(study_id="NomJID2002",study_n=261.00,subgroup="Japanese",subgroup_race_ethnicity="Japanese",
+second_Nom_study=data.frame(study_id="NomJInf2002",study_n=261.00,subgroup="Japanese",subgroup_race_ethnicity="Japanese",
 subgroup_n=261.00,age=72.5,time_period=1982,birth_cohort=1909.5,seer_race_ethnicity="Non-Hispanic Asian or Pacific Islander",
 race_ethnicity_notes=NA,hp_num=174+19,hp_denom=261.00,hp_pct=73.9,hp_notes=NA,version=NA,immigrant_n=0.16*261,year_pub=2002,
 year=NA,race_f="Non-Hispanic Asian",total=261.00,HP=174+19,prev=74,prev_ci_lb=68,prev_ci_ub=79,birthplaceUS=NA)
@@ -144,7 +144,6 @@ compute_p_matrix <- function(mat_all, age, inds,
       kappa_i <- m_kappa[it, inds]
       p_raw <- alpha_i * (1 - exp(-(gamma_i * age)^kappa_i))
     }
-    print(it)
     p_mat[it, ] <- 0.001 + 0.998 * p_raw
   }
 
@@ -197,56 +196,56 @@ run_loo_for_model <- function(model_name, fit_path, p_mat_args, hp, n) {
 # *****************************************************************************
 loo_configs <- list(
   base = list(
-    file = "./cluster_output/fit_base.rds",
+    file = "./results_cluster/fit_base.rds",
     args = list(structure = "linear_binary", kappa_mode = "none",
                 has_study_re = FALSE, bc = birth_cohort_cat,
                 inds = inds, age = age, n_races = n_races)
   ),
   study_re = list(
-    file = "./cluster_output/fit_study_re.rds",
+    file = "./results_cluster/fit_study_re.rds",
     args = list(structure = "linear_binary", kappa_mode = "none",
                 has_study_re = TRUE, study_id = study_id, bc = birth_cohort_cat,
                 inds = inds, age = age, n_races = n_races)
   ),
   kappa_global = list(
-    file = "./cluster_output/fit_kappa_global.rds",
+    file = "./results_cluster/fit_kappa_global.rds",
     args = list(structure = "linear_binary", kappa_mode = "global",
                 has_study_re = FALSE, bc = birth_cohort_cat,
                 inds = inds, age = age, n_races = n_races)
   ),
   kappa_partial = list(
-    file = "./cluster_output/fit_kappa_partial.rds",
+    file = "./results_cluster/fit_kappa_partial.rds",
     args = list(structure = "linear_binary", kappa_mode = "partial",
                 has_study_re = FALSE, bc = birth_cohort_cat,
                 inds = inds, age = age, n_races = n_races)
   ),
   kappa_global_study_re = list(
-    file = "./cluster_output/fit_kappa_global_study_re.rds",
+    file = "./results_cluster/fit_kappa_global_study_re.rds",
     args = list(structure = "linear_binary", kappa_mode = "global",
                 has_study_re = TRUE, study_id = study_id, bc = birth_cohort_cat,
                 inds = inds, age = age, n_races = n_races)
   ),
   kappa_partial_study_re = list(
-    file = "./cluster_output/fit_kappa_partial_study_re.rds",
+    file = "./results_cluster/fit_kappa_partial_study_re.rds",
     args = list(structure = "linear_binary", kappa_mode = "partial",
                 has_study_re = TRUE, study_id = study_id, bc = birth_cohort_cat,
                 inds = inds, age = age, n_races = n_races)
   ),
   base_continuous_bc = list(
-    file = "./cluster_output/fit_base_continuous_bc.rds",
+    file = "./results_cluster_sensitivity_analysis/fit_base_continuous_bc.rds",
     args = list(structure = "linear_continuous", kappa_mode = "none",
                 has_study_re = FALSE, bc_scaled = bc_scaled,
                inds = inds, age = age, n_races = n_races)
   ),
   RW_continuous_bc = list(
-    file = "./cluster_output/fit_RW_continuous_bc.rds",
+    file = "./results_cluster_sensitivity_analysis/fit_RW_continuous_bc.rds",
     args = list(structure = "rw_shared", kappa_mode = "none",
                 has_study_re = TRUE, study_id = study_id,
                 cohort_idx = cohort_idx, n_cohorts = n_cohorts,
                 inds = inds, age = age, n_races = n_races)
   ),
   RW_expanded_continuous_bc = list(
-    file = "./cluster_output/fit_RW_expanded_continuous_bc.rds",
+    file = "./results_cluster_sensitivity_analysis/fit_RW_expanded_continuous_bc.rds",
     args = list(structure = "rw_race_dev", kappa_mode = "none",
                has_study_re = TRUE, study_id = study_id,
                cohort_idx = cohort_idx, n_cohorts = n_cohorts,
@@ -286,7 +285,7 @@ comparison_df <- as.data.frame(comparison) %>%
 
 write_csv(comparison_df, "results/loo_comparison_ALL.csv")
 
-fit_obj <- readRDS("./cluster_output/fit_study_re.rds")
+fit_obj <- readRDS("./results_cluster/fit_study_re.rds")
 mat_all <- as.matrix(fit_obj$mcmc_all)
 study_re_cols <- grep("^study_re\\[", colnames(mat_all))
 cat("n_studies (in saved fit):", length(study_re_cols), "\n")

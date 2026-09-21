@@ -176,11 +176,13 @@ run_aoi <- function(gamma_fn, grid_df, idx_name, race_index, race_labels, n_iter
   bind_rows(aoi_list)
 }
 
-generate_traceplot_function <- function(draws, labels, ncol_facet = 1) {
+generate_traceplot_function <- function(draws, labels, ncol_facet = 1, n_chains = 3) {
   draws_df <- as.data.frame(draws)
   colnames(draws_df) <- labels
-  draws_df$iteration <- rep(seq(1,2000),3) #seq_len(nrow(draws_df))
-  draws_df$chain <- c(rep('1',20000),rep('2',20000),rep('3',20000)) 
+  n_iter_per_chain <- nrow(draws_df) / n_chains
+  stopifnot(n_iter_per_chain == round(n_iter_per_chain))
+  draws_df$iteration <- rep(seq_len(n_iter_per_chain), n_chains)
+  draws_df$chain <- rep(factor(seq_len(n_chains)), each = n_iter_per_chain)
 
   draws_df_long <- pivot_longer(draws_df,
                                  cols = -c(iteration,chain),
@@ -231,7 +233,7 @@ make_max_prev_by_race_cohort <- function(df_p_hat_race_final, ref_age, filter_ye
 # *****************************************************************************************************
 # *****************************************************************************************************
 
-cluster_fit <- readRDS("./cluster_output/fit_base_continuous_bc.rds")
+cluster_fit <- readRDS("./results_cluster_sensitivity_analysis/fit_base_continuous_bc.rds")
 mcmc_all    <- cluster_fit$mcmc_all
 mat_all     <- as.matrix(mcmc_all)
 
@@ -270,14 +272,6 @@ par_fn_base <- function(r, t) {
     a_vec = ilogit(m_alpha0[r, ] + m_alpha1[r, ] * bc_val),
     g_vec = exp(   m_gamma0[r, ] + m_gamma1[r, ] * bc_val)
   )
-}
-
-for (r in race_index) {
-  dt_prev <- df_p_hat_race_final  %>% filter(race == race_labels[r])
-  dt_foi  <- df_hp_hat_race_final %>% filter(race == race_labels[r])
-  save(dt_prev, dt_foi,
-       file = paste0("results/rw_cohort_dt_prev_hat_race_", r, "_",
-                      race_short_labels[r], "_RWcohort_expanded.Rdata"))
 }
 
 pred_base <- run_predictions(par_fn_base, bc_lookup, "bc_point_idx", race_index, race_labels, ages_vec)
@@ -431,7 +425,7 @@ gtsave(gelman_univariate_PSRF_table, "./figures_aug20_2026/continuous_cohort_fig
 # *****************************************************************************************************
 # *****************************************************************************************************
 
-cluster_fit <- readRDS("./cluster_output/fit_RW_continuous_bc.rds")
+cluster_fit <- readRDS("./results_cluster_sensitivity_analysis/fit_RW_continuous_bc.rds")
 mcmc_all    <- cluster_fit$mcmc_all
 mat_all     <- as.matrix(mcmc_all)
 
@@ -639,7 +633,7 @@ gtsave(gelman_univariate_PSRF_table, "./figures_aug20_2026/continuous_cohort_fig
 # *****************************************************************************************************
 # *****************************************************************************************************
 
-cluster_fit <- readRDS("./cluster_output/fit_RW_expanded_continuous_bc.rds")
+cluster_fit <- readRDS("./results_cluster_sensitivity_analysis/fit_RW_expanded_continuous_bc.rds")
 mcmc_all    <- cluster_fit$mcmc_all
 mat_all     <- as.matrix(mcmc_all)
 
@@ -653,6 +647,10 @@ cohort_lookup <- data.frame(
 ) %>%
   distinct() %>%
   arrange(cohort_idx)
+
+# a readable subset of birth cohort years for the by-cohort comparison plots below
+# (avoids overplotting when there are many distinct cohort years)
+cohort_years_to_plot <- cohort_lookup$birth_cohort[round(seq(1, n_cohorts, length.out = 6))]
 
 par_alpha0_draws <- t(sapply(1:n_races, function(j) get_vec(mat_all, "par_alpha0", j)))
 par_gamma0_draws <- t(sapply(1:n_races, function(j) get_vec(mat_all, "par_gamma0", j)))
@@ -883,7 +881,7 @@ for (r in 1:n_races) {
   alpha_dev_labels <- paste0(race_labels[r], " alpha_dev, cohort=", ref_cohort_years)
   gamma_dev_labels <- paste0(race_labels[r], " gamma_dev, cohort=", ref_cohort_years)
 
-  race_short_r <- gsub(" ", "", race_labels[r])
+  race_short_r <- race_short_labels[r]  # e.g. "AIAN", not "AI/AN" -- a literal "/" would break the output path
 
   generate_traceplot_function(m_alpha_dev_r, alpha_dev_labels, ncol_facet = 2)
   ggsave(paste0("./figures_aug20_2026/continuous_cohort_figs/alpha_dev_traceplot_", race_short_r, "_RWcohort_expanded.png"), width = 14, height = 10)
