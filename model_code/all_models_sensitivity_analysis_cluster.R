@@ -32,21 +32,19 @@ dir.create(out_dir, showWarnings = FALSE, recursive = TRUE)
 dir.create(fig_dir, showWarnings = FALSE, recursive = TRUE)
 
 # *****************************************************************************
-#### Prior parameterisation flagged during review ####
+#### Prior parameterisation flagged during review, resolved by author ####
 #
 # JAGS dnorm(mu, tau) takes a PRECISION. The random-walk initial states were
-# written as dnorm(0, 25), which is precision 25, i.e. SD 0.2 -- a very TIGHT
-# prior on the first cohort's random-walk state. The Supplementary Appendix
-# states N(0, 25) with 25 as a VARIANCE, i.e. SD 5 (precision 0.04) -- a
-# diffuse prior. The coded prior is 25x tighter in SD than documented, and the
-# tight version substantially constrains the earliest birth cohort.
+# originally written as dnorm(0, 25), i.e. precision 25, SD 0.2 -- a very
+# TIGHT prior on the first cohort's random-walk state. The Supplementary
+# Appendix states N(0, 25) with 25 as a VARIANCE, i.e. SD 5 (precision 0.04)
+# -- a diffuse prior, 25x looser in SD than the originally-coded value.
 #
-#   RW_INIT_TAU = 25.00  -> SD 0.20   (as originally coded)
-#   RW_INIT_TAU = 0.04   -> SD 5.00   (Appendix: variance 25)
-#
-# Not changed by default: as with the gamma-intercept prior, this is an author
-# decision. Setting it to 0.04 and refitting quantifies how much it matters.
-RW_INIT_TAU <- 25.00   # as originally coded
+# Author decision: use the diffuse Appendix reading, so the earliest birth
+# cohort's random-walk state is left sufficiently noninformative.
+#   RW_INIT_TAU = 25.00  -> SD 0.20   (originally coded)
+#   RW_INIT_TAU = 0.04   -> SD 5.00   (Appendix: variance 25)   <- used below
+RW_INIT_TAU <- 0.04
 # *****************************************************************************
 
 # *****************************************************************************

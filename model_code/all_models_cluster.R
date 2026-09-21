@@ -30,24 +30,18 @@ dir.create(out_dir, showWarnings = FALSE, recursive = TRUE)
 dir.create(fig_dir, showWarnings = FALSE, recursive = TRUE)
 
 # *****************************************************************************
-#### Prior parameterisation flagged during review ####
+#### Prior parameterisation flagged during review, resolved by author ####
 #
 # JAGS dnorm(mu, tau) and dt(mu, tau, k) take a PRECISION, not an SD or a
-# variance. Two priors are written as though the second argument were an SD,
-# so the fitted model differs from the Supplementary Appendix. Neither is
-# changed by default -- as with the gamma-intercept prior, which reading is
-# correct is an author decision. Both readings are given here so the choice is
-# explicit and a re-run is a one-line change.
-#
-# log(kappa) ~ Normal(0, tau):
-#   KAPPA_TAU = 0.40  -> prior SD 1.58, kappa 95% prior interval ~(0.05, 22)
-#   KAPPA_TAU = 6.25  -> prior SD 0.40, kappa ~(0.46, 2.19)   <- Appendix
-#                        reading of "kappa ~ Lognormal(0, 0.4)" with 0.4 as SD
-#   KAPPA_TAU = 2.50  -> prior SD 0.63, kappa ~(0.29, 3.44)   <- same statement
-#                        read with 0.4 as a VARIANCE
-# The appendix notation is ambiguous between the last two; the coded value is
-# neither.
-KAPPA_TAU <- 0.40    # as originally coded
+# variance. log(kappa) ~ Normal(0, KAPPA_TAU) -- kappa's 95% prior interval is
+# exp(+-1.96/sqrt(KAPPA_TAU)). Author decision: target a ~95% prior interval
+# of roughly (0.2, 5), tighter than the originally-coded KAPPA_TAU = 0.40
+# (95% interval ~(0.05, 22)) and looser than either literal reading of the
+# Appendix's "kappa ~ Lognormal(0, 0.4)" (SD=0.4 -> (0.46, 2.19); var=0.4 ->
+# (0.29, 3.44)). Median stays at kappa = 1 regardless of KAPPA_TAU.
+#   KAPPA_TAU = 1/(ln(5)/1.96)^2 = 1.483, rounded to 1.5
+#   -> prior SD on log(kappa) = 0.816, kappa 95% prior interval ~(0.20, 4.95)
+KAPPA_TAU <- 1.5
 # *****************************************************************************
 
 # *****************************************************************************
