@@ -650,7 +650,7 @@ cohort_lookup <- data.frame(
 
 # a readable subset of birth cohort years for the by-cohort comparison plots below
 # (avoids overplotting when there are many distinct cohort years)
-cohort_years_to_plot <- cohort_lookup$birth_cohort[round(seq(1, n_cohorts, length.out = 6))]
+#cohort_years_to_plot <- cohort_lookup$birth_cohort[round(seq(1, n_cohorts, length.out = 6))]
 
 par_alpha0_draws <- t(sapply(1:n_races, function(j) get_vec(mat_all, "par_alpha0", j)))
 par_gamma0_draws <- t(sapply(1:n_races, function(j) get_vec(mat_all, "par_gamma0", j)))
@@ -757,7 +757,7 @@ ggsave("./figures_aug20_2026/continuous_cohort_figs/predicted_prev_by_cohort_yea
 
 
 max_prev_by_race_cohort <- df_p_hat_race_final %>%
-  filter(age == fin_age, birth_cohort %in% cohort_years_to_plot)
+  filter(age == fin_age)#, birth_cohort %in% cohort_years_to_plot)
 
 ggplot(max_prev_by_race_cohort,
        aes(x = race, y = Mean, color = factor(birth_cohort),
@@ -784,7 +784,7 @@ plot_max_prev_rw_exp <- function(df, ref_age) {
 }
 
 max_prev_by_race_cohort_list <- lapply(ref_ages, function(a)
-  make_max_prev_by_race_cohort(df_p_hat_race_final, a, filter_years = cohort_years_to_plot))
+  make_max_prev_by_race_cohort(df_p_hat_race_final, a))
 names(max_prev_by_race_cohort_list) <- paste0("age_", ref_ages)
 max_prev_by_race_cohort <- max_prev_by_race_cohort_list[[paste0("age_", fin_age)]]
 
@@ -819,8 +819,8 @@ for (r in race_index) {
 save(df_aoi_final, file = "results/rw_cohort_expanded_df_aoi_all.Rdata")
 
 aoi_by_race_cohort <- df_aoi_final %>%
-  filter(Mean < 100) %>%
-  filter(birth_cohort %in% cohort_years_to_plot)
+  filter(Mean < 100)
+  #filter(birth_cohort %in% cohort_years_to_plot)
 
 ggplot(aoi_by_race_cohort,
        aes(x = race, y = Mean, color = factor(birth_cohort),
