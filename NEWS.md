@@ -115,29 +115,33 @@ correct participant count for that or any other dataset. Now
 The study and participant counts in the manuscript should be re-derived from
 the corrected pipeline before the next submission.
 
-### Two further precision-vs-SD prior mismatches
+### Two further precision-vs-SD prior mismatches — resolved by author
 
 Following the same pattern as the gamma-intercept prior resolved above, JAGS
 `dnorm`/`dt` take a PRECISION, and two more priors were written as though the
-second argument were an SD or a variance:
+second argument were an SD or a variance. Both are named constants, passed to
+JAGS as data (`KAPPA_TAU` in `all_models_cluster.R`, `RW_INIT_TAU` in
+`all_models_sensitivity_analysis_cluster.R`), with the reasoning documented
+inline at each definition. Both now resolved:
 
-| Parameter | Code | Implied by the code | Appendix | Implied by the appendix |
-|---|---|---|---|---|
-| `log_kappa` | `dnorm(0, 0.4)` | SD **1.58**, kappa ~(0.05, 22) | Lognormal(0, 0.4) | SD **0.4**, kappa ~(0.46, 2.19) |
-| RW initial state | `dnorm(0, 25)` | SD **0.2** | N(0, 25), variance 25 | SD **5** |
+- **`KAPPA_TAU`: `0.40` → `1.5`.** As originally coded (0.40 read as
+  precision), kappa's 95% prior interval was ~(0.05, 22); the Appendix's
+  "kappa ~ Lognormal(0, 0.4)" is itself ambiguous between 0.4 as an SD
+  (precision 6.25, kappa ~(0.46, 2.19)) and as a variance (precision 2.5,
+  kappa ~(0.29, 3.44)). Author decision: rather than adopt either literal
+  reading, target kappa's 95% prior interval directly at ~(0.2, 5)
+  (`KAPPA_TAU = 1/(ln(5)/1.96)^2`, rounded to 1.5) — tighter than the
+  original but looser than either Appendix reading. Median stays at
+  kappa = 1 regardless of `KAPPA_TAU`.
+- **`RW_INIT_TAU`: `25` → `0.04`.** As originally coded (25 read as
+  precision), the random walk's earliest-cohort state had SD 0.2 — a fairly
+  tight prior. The Appendix's "N(0, 25)" reads more naturally as variance =
+  25 (SD = 5, precision = 0.04). Author decision: adopt the Appendix's
+  diffuse reading, so the earliest birth cohort's random-walk state is left
+  sufficiently noninformative.
 
-The random-walk case is the more consequential: the coded prior is 25x tighter
-in SD than documented, and substantially constrains the earliest birth
-cohort's random-walk state.
-
-**Neither is changed by default.** As with the gamma intercept, which reading
-is correct is an author decision. Both are now named constants at the top of
-their scripts (`KAPPA_TAU` in `all_models_cluster.R`, `RW_INIT_TAU` in
-`all_models_sensitivity_analysis_cluster.R`) and passed to JAGS as data, with
-the alternatives documented inline, so re-running under either reading is a
-one-line change. Note the appendix's "Lognormal(0, 0.4)" is itself ambiguous
-between 0.4 as an SD (precision 6.25) and as a variance (precision 2.5); the
-coded value, 0.4 as a precision, is neither.
+**Both require refitting** `all_models_cluster.R` and
+`all_models_sensitivity_analysis_cluster.R`.
 
 ### Convergence diagnostics
 
