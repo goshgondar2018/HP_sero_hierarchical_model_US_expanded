@@ -35,25 +35,36 @@ dir.create(fig_dir, showWarnings = FALSE, recursive = TRUE)
 # *****************************************************************************
 load("data/df_hp_usa_w_final.Rdata")
 
+second_Nom_study=data.frame(study_id="NomJInf2002",study_n=261.00,subgroup="Japanese",subgroup_race_ethnicity="Japanese",
+subgroup_n=261.00,age=72.5,time_period=1982,birth_cohort=1909.5,seer_race_ethnicity="Non-Hispanic Asian or Pacific Islander",
+race_ethnicity_notes=NA,hp_num=174+19,hp_denom=261.00,hp_pct=73.9,hp_notes=NA,version=NA,immigrant_n=0.16*261,year_pub=2002,
+year=NA,race_f="Non-Hispanic Asian",total=261.00,HP=174+19,prev=74,prev_ci_lb=68,prev_ci_ub=79,birthplaceUS=NA)
+
 data_model <- df_hp_usa_w_final %>%
   arrange(race_f, year) %>%
-  filter(race_f != "Other") %>%
+  filter(race_f != "Other") 
+
+data_model_complete=rbind.data.frame(data_model,second_Nom_study)%>%
   mutate(
     study_id_fac = factor(study_id),
     race_fac     = factor(race_f),
     time         = year - 1988,
-    bc_scaled    = birth_cohort - min(birth_cohort)
+    bc_scaled    = birth_cohort - min(birth_cohort),
+    birth_cohort_cat = ifelse(birth_cohort < 1960, 0, 1)
   )
 
-data_model_filtered <- data_model %>%
-  #filter(study_id != "SawJRhe2004") %>%
-  filter(!(study_id == "GooJImm2003" & subgroup_n == 384.00)) %>%
-  filter(!(study_id == "FelBirt2007" & subgroup_n == 147.00)) %>%
-  filter(!(study_id == "ParClin2000" & subgroup_n == 2080.00)) %>%
-  filter(!(study_id == "ParClin2000" & subgroup_n == 1040.00)) %>%
-  filter(!(study_id == "CorCanc1990" & age == 0.0410)) %>%
-  filter(!(study_id == "CorCanc1990" & age == 0.2500)) %>%
-  filter(!(study_id == "CorCanc1990" & age == 0.7085))
+data_model_filtered <- data_model_complete %>%
+  filter(study_id != 'CorCanc1990') %>%
+  filter(study_id != 'GraGast1991') %>%
+  filter(study_id != 'SawJRhe2004') %>%
+  filter(study_id != 'MuhJInf2015') %>%
+  filter(study_id != 'EppCanc2011_3') %>%
+  filter(!(study_id == 'GooJImm2003' & subgroup_n == 384.00)) %>%
+  filter(!(study_id == 'FelBirt2007' & subgroup_n == 147.00)) %>%
+  filter(!(study_id == 'ParClin2000' & subgroup_n == 2080.00)) %>%
+  filter(!(study_id == 'ParClin2000' & subgroup_n == 1040.00))
+
+#total_pop=sum(unique(data_model_filtered$subgroup_n))
 
 N          <- nrow(data_model_filtered)
 inds       <- as.numeric(data_model_filtered$race_fac)
