@@ -62,30 +62,40 @@ for full detail; summarized here.
 - **`figures_code/figures_cluster_sensitivity_analysis_sep15.R`**:
   removed a stray, copy-pasted block at the start of the "Model 1"
   section that referenced results objects before they existed and
-  would have errored on a fresh run; defined `cohort_years_to_plot`,
-  which was used in the "Model 3 (RW cohort, expanded)" section but
-  never defined, causing that section to error; fixed a filename bug
-  where the "AI/AN" race label's `/` was passed through into a file
-  path (via an incomplete `gsub`), which would break `ggsave()` for
-  that group's per-race diagnostic plots; same `./cluster_output/` and
-  trace-plot fixes as above.
+  would have errored on a fresh run; fixed a filename bug where the
+  "AI/AN" race label's `/` was passed through into a file path (via an
+  incomplete `gsub`), which would break `ggsave()` for that group's
+  per-race diagnostic plots; same `./cluster_output/` and trace-plot
+  fixes as above. `cohort_years_to_plot` was used in the "Model 3 (RW
+  cohort, expanded)" section but never defined, causing that section
+  to error; per author decision, cohort-year subsetting was removed
+  entirely from that section's max-prevalence and median-age-of-
+  infection plots rather than restored, so they now show all cohort
+  years.
 
-None of these fixes change the JAGS model definitions, priors, or
-equations themselves — all are either scripts that previously could not
-run to completion, or presentation/robustness fixes.
+None of these fixes change the JAGS model definitions or equations
+themselves — all are either scripts that previously could not run to
+completion, or presentation/robustness fixes.
 
-### Known issues flagged for author review (not changed)
+### Author-driven changes made alongside this review
 
-These were surfaced during the review but intentionally left
-unchanged, since resolving them one way or the other affects reported
-results and should be a deliberate author decision:
+- **Force-of-infection intercept prior**: the Supplementary Appendix
+  documents the γ-intercept prior as `t₍₃₎(−4.6, 1)` (Equations 9, 34,
+  36), but the code used `dt(-3.2, 1, 3)` in JAGS across every model
+  (binary and continuous cohort) — a real discrepancy between the
+  published methods and the code that actually produced the results.
+  Flagged during review; the author subsequently set the prior center
+  to `-3.9` in `all_models_cluster.R`, which has been propagated to all
+  three models in `all_models_sensitivity_analysis_cluster.R` so the
+  same prior is used consistently across binary- and continuous-cohort
+  formulations, per the Appendix's stated intent ("We assume similar
+  priors for the alpha and gamma intercepts as for the corresponding
+  fixed effects in the continuous and binary cohort base models"). The
+  Supplementary Appendix text (which still says `-4.6`) should be
+  updated to `-3.9` to match before the next submission/revision.
 
-- **Force-of-infection intercept prior mismatch**: the Supplementary
-  Appendix documents the γ-intercept prior as `t₍₃₎(−4.6, 1)` (Equations
-  9, 34, 36), but every model script (binary and continuous cohort) uses
-  `dt(-3.2, 1, 3)` in JAGS. This is a real discrepancy between the
-  published methods and the code that actually produced the results —
-  worth confirming which is correct and updating the other to match.
+### Other findings (no code change)
+
 - **`race_ethnicity_notes` / smaller row-level discrepancies**: the
   systematic Excel-vs-`.Rdata` comparison above covered every study;
   no other row-level mismatches were found beyond the three studies
