@@ -7,6 +7,11 @@
 library(loo)
 library(extraDistr)   
 library(tidyverse)
+# Required: supplies as.matrix()/varnames() methods for coda mcmc.list objects.
+# Without it, as.matrix(mcmc_list) silently falls through to as.matrix.default
+# and returns an unnamed list-matrix, so every subsequent
+# mat_all[, "par[1,1]"] lookup fails with "no 'dimnames' attribute for array".
+library(coda)
 
 ilogit <- function(x) 1 / (1 + exp(-x))
 race_labels <- c("Hispanic", "NH American Indian", "NH Asian", "NH Black", "NH White")
@@ -56,7 +61,20 @@ hp         <- round(data_model_filtered$HP)
 age        <- data_model_filtered$age
 bc_scaled  <- data_model_filtered$bc_scaled
 birth_cohort_cat <- data_model_filtered$birth_cohort_cat
-n          <- round(data_model_filtered$subgroup_n)
+# Binomial denominator: the number ASSAYED, not the number enrolled.
+#
+# `subgroup_n` is the subgroup size; `total` (== `hp_denom`) is how many were
+# actually tested. They differ for three rows, and the dataset's own `prev`
+# column is computed from `hp_denom`, so using subgroup_n made the modelled
+# prevalence disagree with the reported prevalence for those rows:
+#
+#   MeiSocS2016 Hispanic  1149/1562 = 73.6%  vs  1149/1226 = 93.7%  (20.2 pp)
+#   RubGenE2013 AI/AN      594/801  = 74.2%  vs   594/766  = 77.5%  ( 3.4 pp)
+#   MieHeli2018 AI/AN      422/571  = 73.9%  vs   422/561  = 75.2%  ( 1.3 pp)
+#
+# MeiSocS2016 is a 1,226-person Hispanic observation in the pre-1960 cohort, so
+# the old denominator biased Hispanic maximum prevalence downward.
+n          <- round(data_model_filtered$total)
 study_id_raw <- data_model_filtered$study_id
 study_id     <- as.numeric(as.factor(study_id_raw))
 n_studies    <- length(unique(study_id))

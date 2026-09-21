@@ -1,5 +1,219 @@
 # NEWS
 
+## Unreleased (branch `fix/foi-and-denominators`)
+
+A second review pass, run independently against the same co-author workbook
+and the Supplementary Appendix, layered on top of the
+`bugfix/data-and-model-review` fixes (recorded in the section below). The
+items here are the ones that review did not cover.
+
+**Results will change.** The force-of-infection and denominator corrections
+both alter reported numbers. All models must be refitted and all results
+regenerated.
+
+### Force of infection was understated by up to 27%
+
+`figures_cluster_sep4.R` and `figures_cluster_sensitivity_analysis_sep15.R`
+both computed the force of infection with the denominator
+
+```r
+foi_den <- 1 - p_mat * one_minus_exp + 1e-10
+```
+
+`p_mat` already **is** F(a), the cumulative probability of infection (the
+rescaled `p_raw_mat`). Multiplying it again by `one_minus_exp` applied the
+cumulative-infection term a second time, so the denominator was always larger
+than the `1 - F(a)` that Appendix Eq. 3 requires and every force-of-infection
+estimate was too small.
+
+The bias is age-dependent, and largest where the force of infection peaks
+(alpha = 0.8, gamma = 0.05, kappa = 1):
+
+| Age | Correct lambda(a) | As computed | Error |
+|----:|------------------:|------------:|------:|
+|   5 |           0.03785 |     0.03243 | -14.3% |
+|  20 |           0.02977 |     0.02163 | **-27.3%** |
+|  40 |           0.01756 |     0.01346 | -23.4% |
+|  90 |           0.00213 |     0.00204 |  -4.3% |
+
+Because the bias varies with age, it distorted both the peak force of
+infection and the age at which it peaks, and did so differently for each
+race/ethnicity group. Recomputing from a short test fit of
+`kappa_partial_study_re` gives an indication of the scale (parameter values
+from a real run will differ, but the direction and rough magnitude hold):
+
+| Group | Cohort | Peak FOI (old) | Peak FOI (corrected) | Change | Age at peak (old -> corrected) |
+|---|---|---:|---:|---:|---|
+| Hispanic | Pre-1960 | 0.1077 | 0.1382 | +28.3% | 10.3 -> 14.6 |
+| Hispanic | 1960+    | 0.0777 | 0.0922 | +18.7% | 9.5 -> 15.1 |
+| AI/AN    | Pre-1960 | 0.1115 | 0.1298 | +16.4% | 2.2 -> 3.1 |
+| AI/AN    | 1960+    | 0.1685 | 0.1966 | +16.6% | 1.1 -> 1.3 |
+| API      | Pre-1960 | 0.0361 | 0.0410 | +13.6% | 14.0 -> 15.8 |
+| API      | 1960+    | 0.0336 | 0.0364 |  +8.3% | 17.0 -> 19.4 |
+| NHB      | Pre-1960 | 0.0814 | 0.0878 |  +7.9% | 0.7 -> 0.9 |
+| NHB      | 1960+    | 0.0627 | 0.0663 |  +5.7% | 0.7 -> 0.8 |
+| NHW      | Pre-1960 | 0.0174 | 0.0190 |  +9.2% | 19.5 -> 20.8 |
+| NHW      | 1960+    | 0.0193 | 0.0202 |  +4.3% | 7.2 -> 7.9 |
+
+Peak FOI rises by 4-28% and the age at peak moves **later**, by up to 5.6
+years. Because the shift differs by group, between-group FOI comparisons
+change as well, not just the levels.
+
+The denominator now uses `p_raw_mat`, matching the prevalence curve reported
+from the same loop. Age 0 is excluded from the FOI in both scripts (it was
+already excluded in the continuous-cohort script but commented out in the
+binary one): `(gamma*a)^(kappa-1)` is infinite at age 0 when kappa < 1.
+
+### Three observations used the wrong binomial denominator
+
+`subgroup_n` (the number enrolled) was passed to JAGS as the binomial
+denominator, but `total` (== `hp_denom`, the number actually assayed) is what
+the dataset's own `prev` column uses. They differ for three rows:
+
+| Study | Group | Numerator | Old denominator | Correct | Old prevalence | Correct | Error |
+|---|---|---:|---:|---:|---:|---:|---:|
+| MeiSocS2016 | Hispanic | 1,149 | 1,562 | 1,226 | 73.6% | 93.7% | **20.2 pp** |
+| RubGenE2013 | AI/AN | 594 | 801 | 766 | 74.2% | 77.5% | 3.4 pp |
+| MieHeli2018 | AI/AN | 422 | 571 | 561 | 73.9% | 75.2% | 1.3 pp |
+
+MeiSocS2016 is a 1,226-person Hispanic observation at age 70 (pre-1960
+cohort), so the old denominator biased Hispanic maximum prevalence downward.
+Changed in both model scripts, the LOO script and the binary figures script.
+
+### Index of disparity
+
+The Pearcy & Keppel index of disparity was computed as
+`(sum(Mean - Mean[5]) / 5) * 100 / Mean[5]`. Three problems, all fixed:
+
+- **`abs()` was missing**, so groups above and below the referent cancelled.
+- **The sum was divided by 5** (all groups) rather than by the 4 comparison
+  groups; the referent contributes a zero deviation, shrinking the index by a
+  further factor of 4/5.
+- **The interval was built from marginal quantiles** (`LB - LB[5]`,
+  `UB - UB[5]`, then divided by `UB[5]`/`LB[5]`), which is not a valid
+  credible interval for a nonlinear function of correlated parameters.
+
+The index is now computed per posterior draw from the existing
+`max_prev_draws_pre` / `max_prev_draws_post` matrices, then summarised.
+
+### Change in maximum prevalence is now computed per draw
+
+`max_prev_percent_change_summarized` differenced the already-summarised
+`Mean`, `LB` and `UB` columns. Now computed per draw, and reported as both an
+absolute change (percentage points) and a relative change (%).
+
+### Analytic sample size, and the provenance of "N = 62,688"
+
+`total_pop = sum(unique(data_model_filtered$subgroup_n))` de-duplicated by
+VALUE across the whole dataset, silently dropping every subgroup whose size
+coincided with another's -- 22 subgroups. That expression is the source of the
+**N = 62,688** reported in the manuscript: it reproduces that figure exactly
+from the figure script's dataset, whose correct sum is 64,897. It is not a
+correct participant count for that or any other dataset. Now
+`sum(data_model_filtered$total)`.
+
+The study and participant counts in the manuscript should be re-derived from
+the corrected pipeline before the next submission.
+
+### Two further precision-vs-SD prior mismatches
+
+Following the same pattern as the gamma-intercept prior resolved above, JAGS
+`dnorm`/`dt` take a PRECISION, and two more priors were written as though the
+second argument were an SD or a variance:
+
+| Parameter | Code | Implied by the code | Appendix | Implied by the appendix |
+|---|---|---|---|---|
+| `log_kappa` | `dnorm(0, 0.4)` | SD **1.58**, kappa ~(0.05, 22) | Lognormal(0, 0.4) | SD **0.4**, kappa ~(0.46, 2.19) |
+| RW initial state | `dnorm(0, 25)` | SD **0.2** | N(0, 25), variance 25 | SD **5** |
+
+The random-walk case is the more consequential: the coded prior is 25x tighter
+in SD than documented, and substantially constrains the earliest birth
+cohort's random-walk state.
+
+**Neither is changed by default.** As with the gamma intercept, which reading
+is correct is an author decision. Both are now named constants at the top of
+their scripts (`KAPPA_TAU` in `all_models_cluster.R`, `RW_INIT_TAU` in
+`all_models_sensitivity_analysis_cluster.R`) and passed to JAGS as data, with
+the alternatives documented inline, so re-running under either reading is a
+one-line change. Note the appendix's "Lognormal(0, 0.4)" is itself ambiguous
+between 0.4 as an SD (precision 6.25) and as a variance (precision 2.5); the
+coded value, 0.4 as a precision, is neither.
+
+### Convergence diagnostics
+
+- **Chains started from identical values.** The inits set only `.RNG.seed`, so
+  all three chains began from JAGS's default initialisation. Gelman-Rubin PSRF
+  assumes chains start over-dispersed relative to the posterior; with
+  identical starts it is anti-conservative and can indicate convergence that
+  has not occurred. The binary-cohort chains now start from dispersed `mub`
+  and `log_theta` values. (The continuous models disperse only `log_theta`:
+  their birth-cohort slopes multiply `bc_scaled`, which spans ~91 years, so a
+  slope start of even 0.5 gives `log(gamma) = -3.9 + 45` and overflows the
+  chain. The same scale mismatch affects the Cauchy(0,1) slope PRIOR, which on
+  this scale puts most of its mass on implausibly large effects -- centring
+  and scaling `bc_scaled`, for example per decade, is worth considering.)
+- **Convergence was summarised by the mean PSRF**, which hides a single badly
+  mixing parameter among 15-40. Both model scripts now also record
+  `max_PSRF_all`, `n_PSRF_above_1.1` and a `converged` flag, print the maximum
+  alongside the mean, and emit a loud `*** NOT CONVERGED ***` marker and an R
+  warning when the maximum exceeds 1.1.
+
+### Further bug fixes
+
+- **`LOO_all_model_comparison.R` could not run**: it uses
+  `as.matrix(mcmc_list)` on coda `mcmc.list` objects but never loaded `coda`,
+  so `as.matrix` fell through to `as.matrix.default` and returned an unnamed
+  list-matrix. Every subsequent `mat_all[, "par[1,1]"]` lookup then failed with
+  `no 'dimnames' attribute for array`. Added `library(coda)`.
+- **`gtsave()` to PNG aborted the whole figure loop.** It requires `webshot2`,
+  `chromote` and a headless Chrome; where those are absent it throws, which
+  killed `figures_cluster_sep4.R` after the first model and lost every
+  subsequent model's figures for the sake of a diagnostics table. PSRF tables
+  are now always written as CSV, with the PNG attempted best-effort and a note
+  if it is skipped.
+- **Observed prevalence points were unweighted means.** `df_p_curves_obs`
+  averaged subgroup prevalences within each race x era x age cell, so a
+  15-person subgroup counted as much as a 6,000-person one, and it averaged
+  confidence limits (not a valid interval for the pooled cell). Cells are now
+  pooled by counts with a Jeffreys binomial interval.
+- `summarize_max_prev_RD()` labelled its output `type = "Risk Ratio"` although
+  it computes a difference; now "Risk Difference".
+
+### Open questions for the authors (no code change)
+
+- **`TsaAmJE2005` uses combined-modality testing** (ELISA for ages >= 2, stool
+  HpSA below 2) and is included, although the manuscript states that
+  combined-modality testing was excluded.
+- **`MuhJInf2015` has no Study Details record** in the workbook, and
+  `ParJInf1997` has a Study Details record but no data rows -- an internal
+  inconsistency in the source workbook. `MuhJInf2015` is dropped by the
+  current filters, but the mismatch is worth raising with the co-author.
+- **NHANES cells can be very small after rounding.** The 250 NHANES rows carry
+  rescaled survey-weighted counts; 18 cells have an effective denominator below
+  5, and rounding to integers shifts cell prevalence by more than 5 percentage
+  points in 13 cells (worst case 54 pp, in an extreme-age cell). A minimum
+  effective sample size for these cells is worth considering.
+- **The random walk treats unequally spaced cohorts as adjacent.** The 69
+  distinct birth-cohort years span 91 calendar years, with 14 steps of 2-4
+  years. A unit-step random walk applies the same innovation variance to a
+  1-year and a 4-year gap, over-smoothing across the gaps. Scaling each
+  innovation precision by the actual gap is the discrete analogue of Brownian
+  motion.
+- **DIC and ELPD-LOO are not on the same scale.** DIC comes from the JAGS
+  `deviance` node, which conditions on the latent `pi[i]`, whereas the PSIS-LOO
+  log-likelihood integrates `pi[i]` out analytically. The two rankings are not
+  directly comparable; ELPD-LOO is the appropriate basis for model comparison.
+- **Manuscript/appendix inconsistencies** noticed while cross-checking: the
+  FOI results paragraph cites "(Figure 5)" mid-sentence where the surrounding
+  text refers to Figure 3; the group-specific kappa means (1.13, 0.849, 1.73,
+  0.894, 1.92) are attributed in the text to the continuous-cohort model but
+  listed in Table S1 under the binary-cohort group-specific kappa model with
+  study random effects; the Discussion reports the largest maximum-prevalence
+  gap widening "from 33 to 58 percentage points" while the Results give
+  30.2 -> 60.4 (Hispanic - NHW) and 31.3 -> 56.9 (AI/AN - NHW); equation
+  number (23) is used twice; and "(5% CrI: 30.4, 76.7)" is missing a digit.
+
+
 ## Unreleased (branch `bugfix/data-and-model-review`)
 
 A full review of the data and code behind "Widening racial and ethnic

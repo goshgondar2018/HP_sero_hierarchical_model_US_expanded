@@ -111,10 +111,22 @@ run_predictions <- function(par_fn, grid_df, idx_name, race_index, race_labels,
       p_raw_mat <- one_minus_exp * a_rep
       p_mat     <- 0.001 + 0.998 * p_raw_mat
 
+      # Force of infection: lambda(a) = (dF/da) / (1 - F(a))   [Appendix Eq. 3]
+      #
+      # F(a) is p_raw_mat = alpha*(1 - exp(-gamma*a)). The previous denominator
+      # was `1 - p_mat * one_minus_exp`, which multiplied the
+      # cumulative-infection term in a SECOND time (p_mat already is F(a),
+      # rescaled), making the denominator too large and understating every
+      # force of infection -- by 14% at age 5, 27% at age 20 and 23% at age 40
+      # for alpha = 0.8, gamma = 0.05. The bias is age-dependent, so it also
+      # shifted the apparent peak FOI and the age at which it occurs.
+      #
+      # p_raw_mat (not p_mat) is used so the denominator matches the prevalence
+      # curve summarised just below, which also comes from p_raw_mat.
       foi_num <- a_rep * g_rep * exp_neg
-      foi_den <- 1 - p_mat * one_minus_exp + 1e-10
+      foi_den <- pmax(1 - p_raw_mat, 1e-10)
       foi_mat <- foi_num / foi_den
-      foi_mat[1, ] <- NA
+      foi_mat[ages_vec == 0, ] <- NA
 
       prev_mean[, t] <- rowMeans2(p_raw_mat, na.rm = TRUE)
       prev_sd[, t]   <- rowSds(p_raw_mat,   na.rm = TRUE)
@@ -397,9 +409,34 @@ gelman_multivariate_PSRF$param <- c(
   "cov_gamma1_alpha1", "cov_gamma0_1",
   "overdispersion_parameter", "sd_study"
 )
-gelman_multivariate_PSRF_table <- gt(cbind.data.frame(parameter = gelman_multivariate_PSRF$param,
-                                                        PSRF = gelman_multivariate_PSRF$PSRF))
-gtsave(gelman_multivariate_PSRF_table, "./figures_aug20_2026/continuous_cohort_figs/multivariate_PSRF_BaseContinuous.png")
+# gtsave() to PNG requires the webshot2 + chromote packages and a headless
+# Chrome install. When those are missing it throws, which previously aborted
+# the whole per-model loop after the first model -- losing every subsequent
+# model's figures for the sake of a diagnostics table. This always writes the
+# table as CSV (which is what you actually want for reporting PSRF values) and
+# treats the PNG as best-effort.
+save_psrf_table <- function(df, png_path) {
+  csv_path <- sub("\\.png$", ".csv", png_path)
+  readr::write_csv(df, csv_path)
+  ok <- requireNamespace("webshot2", quietly = TRUE) &&
+        requireNamespace("chromote", quietly = TRUE)
+  if (!ok) {
+    message("  note: wrote ", csv_path,
+            " (PNG skipped; install webshot2 + chromote for image output)")
+    return(invisible(FALSE))
+  }
+  res <- try(gt::gtsave(gt::gt(df), png_path), silent = TRUE)
+  if (inherits(res, "try-error")) {
+    message("  note: wrote ", csv_path, " but gtsave() to PNG failed: ",
+            conditionMessage(attr(res, "condition")))
+    return(invisible(FALSE))
+  }
+  invisible(TRUE)
+}
+
+save_psrf_table(cbind.data.frame(parameter = gelman_multivariate_PSRF$param,
+                                 PSRF = gelman_multivariate_PSRF$PSRF),
+                "./figures_aug20_2026/continuous_cohort_figs/multivariate_PSRF_BaseContinuous.png")
 
 gelman_par <- cluster_fit$gelman_par
 gelman_univariate_PSRF <- as.data.frame(gelman_par$psrf[, 1])
@@ -414,9 +451,9 @@ gelman_univariate_PSRF$param <- c(
   "delta_log_gamma_H", "delta_log_gamma_AIAN", "delta_log_gamma_API",
   "delta_log_gamma_NHB", "delta_log_gamma_NHW"
 )
-gelman_univariate_PSRF_table <- gt(cbind.data.frame(parameter = gelman_univariate_PSRF$param,
-                                                      PSRF = gelman_univariate_PSRF$PSRF))
-gtsave(gelman_univariate_PSRF_table, "./figures_aug20_2026/continuous_cohort_figs/univariate_PSRF_BaseContinuous.png")
+save_psrf_table(cbind.data.frame(parameter = gelman_univariate_PSRF$param,
+                                 PSRF = gelman_univariate_PSRF$PSRF),
+                "./figures_aug20_2026/continuous_cohort_figs/univariate_PSRF_BaseContinuous.png")
 
 
 # *****************************************************************************************************
@@ -611,9 +648,9 @@ colnames(gelman_multivariate_PSRF) <- "PSRF"
 gelman_multivariate_PSRF$param <- c("mu_alpha0", "mu_gamma0",
                                      "overdispersion_parameter", "sd_rw_alpha_pop",
                                      "sd_rw_gamma_pop", "sd_study")
-gelman_multivariate_PSRF_table <- gt(cbind.data.frame(parameter = gelman_multivariate_PSRF$param,
-                                                        PSRF = gelman_multivariate_PSRF$PSRF))
-gtsave(gelman_multivariate_PSRF_table, "./figures_aug20_2026/continuous_cohort_figs/multivariate_PSRF_RW_cohort.png")
+save_psrf_table(cbind.data.frame(parameter = gelman_multivariate_PSRF$param,
+                                 PSRF = gelman_multivariate_PSRF$PSRF),
+                "./figures_aug20_2026/continuous_cohort_figs/multivariate_PSRF_RW_cohort.png")
 
 gelman_par <- cluster_fit$gelman_par
 gelman_univariate_PSRF <- as.data.frame(gelman_par$psrf[, 1])
@@ -622,9 +659,9 @@ gelman_univariate_PSRF$param <- c("log_alpha0_H", "log_alpha0_AIAN", "log_alpha0
                                    "log_alpha0_NHB", "log_alpha0_NHW",
                                    "log_gamma0_H", "log_gamma0_AIAN", "log_gamma0_API",
                                    "log_gamma0_NHB", "log_gamma0_NHW")
-gelman_univariate_PSRF_table <- gt(cbind.data.frame(parameter = gelman_univariate_PSRF$param,
-                                                      PSRF = gelman_univariate_PSRF$PSRF))
-gtsave(gelman_univariate_PSRF_table, "./figures_aug20_2026/continuous_cohort_figs/univariate_PSRFF_RW_cohort.png")
+save_psrf_table(cbind.data.frame(parameter = gelman_univariate_PSRF$param,
+                                 PSRF = gelman_univariate_PSRF$PSRF),
+                "./figures_aug20_2026/continuous_cohort_figs/univariate_PSRFF_RW_cohort.png")
 
 
 # *****************************************************************************************************
@@ -900,9 +937,9 @@ gelman_multivariate_PSRF$param <- c("mu_alpha0", "mu_gamma0",
                                      "overdispersion_parameter", "sd_rw_alpha_pop",
                                      "sd_rw_gamma_pop", "sd_rw_dev_alpha",
                                      "sd_rw_dev_gamma", "sd_study")
-gelman_multivariate_PSRF_table <- gt(cbind.data.frame(parameter = gelman_multivariate_PSRF$param,
-                                                        PSRF = gelman_multivariate_PSRF$PSRF))
-gtsave(gelman_multivariate_PSRF_table, "./figures_aug20_2026/continuous_cohort_figs/multivariate_PSRF_RW_cohort_expanded.png")
+save_psrf_table(cbind.data.frame(parameter = gelman_multivariate_PSRF$param,
+                                 PSRF = gelman_multivariate_PSRF$PSRF),
+                "./figures_aug20_2026/continuous_cohort_figs/multivariate_PSRF_RW_cohort_expanded.png")
 
 gelman_par <- cluster_fit$gelman_par
 gelman_univariate_PSRF <- as.data.frame(gelman_par$psrf[, 1])
@@ -911,8 +948,8 @@ gelman_univariate_PSRF$param <- c("log_alpha0_H", "log_alpha0_AIAN", "log_alpha0
                                    "log_alpha0_NHB", "log_alpha0_NHW",
                                    "log_gamma0_H", "log_gamma0_AIAN", "log_gamma0_API",
                                    "log_gamma0_NHB", "log_gamma0_NHW")
-gelman_univariate_PSRF_table <- gt(cbind.data.frame(parameter = gelman_univariate_PSRF$param,
-                                                      PSRF = gelman_univariate_PSRF$PSRF))
-gtsave(gelman_univariate_PSRF_table, "./figures_aug20_2026/continuous_cohort_figs/univariate_PSRFF_RW_cohort_expanded.png")
+save_psrf_table(cbind.data.frame(parameter = gelman_univariate_PSRF$param,
+                                 PSRF = gelman_univariate_PSRF$PSRF),
+                "./figures_aug20_2026/continuous_cohort_figs/univariate_PSRFF_RW_cohort_expanded.png")
 
 

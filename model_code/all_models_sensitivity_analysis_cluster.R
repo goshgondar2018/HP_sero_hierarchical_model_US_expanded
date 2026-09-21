@@ -32,6 +32,24 @@ dir.create(out_dir, showWarnings = FALSE, recursive = TRUE)
 dir.create(fig_dir, showWarnings = FALSE, recursive = TRUE)
 
 # *****************************************************************************
+#### Prior parameterisation flagged during review ####
+#
+# JAGS dnorm(mu, tau) takes a PRECISION. The random-walk initial states were
+# written as dnorm(0, 25), which is precision 25, i.e. SD 0.2 -- a very TIGHT
+# prior on the first cohort's random-walk state. The Supplementary Appendix
+# states N(0, 25) with 25 as a VARIANCE, i.e. SD 5 (precision 0.04) -- a
+# diffuse prior. The coded prior is 25x tighter in SD than documented, and the
+# tight version substantially constrains the earliest birth cohort.
+#
+#   RW_INIT_TAU = 25.00  -> SD 0.20   (as originally coded)
+#   RW_INIT_TAU = 0.04   -> SD 5.00   (Appendix: variance 25)
+#
+# Not changed by default: as with the gamma-intercept prior, this is an author
+# decision. Setting it to 0.04 and refitting quantifies how much it matters.
+RW_INIT_TAU <- 25.00   # as originally coded
+# *****************************************************************************
+
+# *****************************************************************************
 #### Data prep (for all models) ####
 # *****************************************************************************
 load("data/df_hp_usa_w_final.Rdata")
@@ -65,7 +83,15 @@ data_model_filtered <- data_model_complete %>%
   filter(!(study_id == 'ParClin2000' & subgroup_n == 2080.00)) %>%
   filter(!(study_id == 'ParClin2000' & subgroup_n == 1040.00))
 
-#total_pop=sum(unique(data_model_filtered$subgroup_n))
+## Analytic sample size. Age strata within a study are disjoint, so summing the
+# assayed counts over rows does not double-count individuals.
+#
+# This was previously sum(unique(subgroup_n)), which de-duplicated by VALUE
+# across the whole dataset and so silently dropped every subgroup whose size
+# happened to equal another subgroup's -- 22 subgroups. That expression is the
+# source of the "N = 62,688" reported in the manuscript; it is not a correct
+# count of this or any other dataset.
+total_pop = sum(data_model_filtered$total)
 
 N          <- nrow(data_model_filtered)
 inds       <- as.numeric(data_model_filtered$race_fac)
@@ -73,7 +99,20 @@ n_races    <- length(unique(data_model_filtered$race_fac))
 hp         <- round(data_model_filtered$HP)
 age        <- data_model_filtered$age
 bc_scaled  <- data_model_filtered$bc_scaled
-n          <- round(data_model_filtered$subgroup_n)
+# Binomial denominator: the number ASSAYED, not the number enrolled.
+#
+# `subgroup_n` is the subgroup size; `total` (== `hp_denom`) is how many were
+# actually tested. They differ for three rows, and the dataset's own `prev`
+# column is computed from `hp_denom`, so using subgroup_n made the modelled
+# prevalence disagree with the reported prevalence for those rows:
+#
+#   MeiSocS2016 Hispanic  1149/1562 = 73.6%  vs  1149/1226 = 93.7%  (20.2 pp)
+#   RubGenE2013 AI/AN      594/801  = 74.2%  vs   594/766  = 77.5%  ( 3.4 pp)
+#   MieHeli2018 AI/AN      422/571  = 73.9%  vs   422/561  = 75.2%  ( 1.3 pp)
+#
+# MeiSocS2016 is a 1,226-person Hispanic observation in the pre-1960 cohort, so
+# the old denominator biased Hispanic maximum prevalence downward.
+n          <- round(data_model_filtered$total)
 OmegaB     <- diag(4)
 
 study_id_raw <- data_model_filtered$study_id
@@ -95,7 +134,8 @@ base_data_continuous <- list(
   n_studies  = n_studies, study_id  = study_id
 )
 rw_data <- c(base_data_continuous, list(
-  cohort_idx = cohort_idx, n_cohorts = n_cohorts
+  cohort_idx = cohort_idx, n_cohorts = n_cohorts,
+  rw_init_tau = RW_INIT_TAU
 ))
 
 
@@ -184,8 +224,8 @@ model_RW_continuous_bc <- paste0("model{
   theta     <- exp(log_theta)
 
   ## shared/population cohort trajectories, i.e. trends over time in both prevalence & rates of infection by age
-  rw_alpha_pop[1] ~ dnorm(0, 25)
-  rw_gamma_pop[1] ~ dnorm(0, 25)
+  rw_alpha_pop[1] ~ dnorm(0, rw_init_tau)
+  rw_gamma_pop[1] ~ dnorm(0, rw_init_tau)
   for (t in 2:n_cohorts){
     rw_alpha_pop[t] ~ dnorm(rw_alpha_pop[t-1], tau_rw_alpha_pop)
     rw_gamma_pop[t] ~ dnorm(rw_gamma_pop[t-1], tau_rw_gamma_pop)
@@ -247,8 +287,8 @@ model_RW_expanded_continuous_bc <- paste0("model{
   log_theta ~ dnorm(3, 1)
   theta     <- exp(log_theta)
 
-  rw_alpha_pop[1] ~ dnorm(0, 25)
-  rw_gamma_pop[1] ~ dnorm(0, 25)
+  rw_alpha_pop[1] ~ dnorm(0, rw_init_tau)
+  rw_gamma_pop[1] ~ dnorm(0, rw_init_tau)
   for (t in 2:n_cohorts){
     rw_alpha_pop[t] ~ dnorm(rw_alpha_pop[t-1], tau_rw_alpha_pop)
     rw_gamma_pop[t] ~ dnorm(rw_gamma_pop[t-1], tau_rw_gamma_pop)
@@ -344,10 +384,22 @@ n_burn   <- 500000
 n_post   <- 20000
 thinning <- 20
 
+# Per-chain RNG seeds AND over-dispersed starting values.
+#
+# Previously only .RNG.seed was set, so all three chains began from the same
+# point, making the reported Gelman-Rubin PSRF anti-conservative.
+#
+# Only log_theta is dispersed here. The birth-cohort slopes multiply bc_scaled,
+# which spans ~91 years, so a slope start of even 0.5 gives
+# log(gamma) = -3.9 + 45 and overflows; and the RW models define only mub[1]
+# and mub[3], so mub cannot be supplied as a length-4 vector across all three
+# models. (The same scale mismatch affects the Cauchy(0,1) slope PRIOR, which
+# puts most of its mass on implausibly large effects on this scale -- see
+# NEWS.md.)
 inits_list <- list(
-  list(.RNG.name = "base::Wichmann-Hill",       .RNG.seed = 1),
-  list(.RNG.name = "base::Marsaglia-Multicarry", .RNG.seed = 2),
-  list(.RNG.name = "base::Super-Duper",          .RNG.seed = 3)
+  list(.RNG.name = "base::Wichmann-Hill",        .RNG.seed = 1, log_theta = 2),
+  list(.RNG.name = "base::Marsaglia-Multicarry", .RNG.seed = 2, log_theta = 3),
+  list(.RNG.name = "base::Super-Duper",          .RNG.seed = 3, log_theta = 4)
 )
 
 # *****************************************************************************
@@ -394,6 +446,25 @@ fit_one_model <- function(model_name, spec) {
   mean_gelman_par  <- if (!is.null(gelman_par))  mean(gelman_par$psrf[, 1])  else NA
   mean_gelman_all  <- mean(c(mean_gelman_conv, mean_gelman_par), na.rm = TRUE)
 
+  # Convergence must be judged on the MAXIMUM PSRF, not the mean: a single
+  # badly mixing parameter is invisible in an average over 15-40 parameters.
+  # DIC and ELPD-LOO are meaningless if the chains have not mixed, so this is
+  # recorded with the fit and warned about loudly.
+  max_gelman_conv <- if (!is.null(gelman_conv)) max(gelman_conv$psrf[, 1]) else NA
+  max_gelman_par  <- if (!is.null(gelman_par))  max(gelman_par$psrf[, 1])  else NA
+  max_gelman_all  <- suppressWarnings(max(c(max_gelman_conv, max_gelman_par), na.rm = TRUE))
+  if (!is.finite(max_gelman_all)) max_gelman_all <- NA_real_
+
+  n_above_1.1 <- sum(c(if (!is.null(gelman_conv)) gelman_conv$psrf[, 1],
+                       if (!is.null(gelman_par))  gelman_par$psrf[, 1]) > 1.1, na.rm = TRUE)
+
+  if (!is.na(max_gelman_all) && max_gelman_all > 1.1) {
+    warning("Model '", model_name, "': maximum PSRF is ", round(max_gelman_all, 3),
+            " over ", n_above_1.1, " parameter(s) above 1.1. Chains have NOT ",
+            "converged; do not report these results.",
+            call. = FALSE, immediate. = TRUE)
+  }
+
   # --- DIC via variance-of-deviance pD approximation ---
   dev_col <- which(varnames(mcmc_all) == "deviance")
   deviance_draws <- as.matrix(mcmc_all)[, dev_col]
@@ -410,6 +481,8 @@ fit_one_model <- function(model_name, spec) {
     mean_gelman_conv = mean_gelman_conv,
     mean_gelman_par  = mean_gelman_par,
     mean_gelman_all  = mean_gelman_all,
+    max_gelman_all   = max_gelman_all,
+    n_PSRF_above_1.1 = n_above_1.1,
     deviance         = deviance_mean,
     pD               = pD_mean,
     dic              = dic_val,
@@ -431,6 +504,9 @@ fit_one_model <- function(model_name, spec) {
     mean_PSRF_conv   = mean_gelman_conv,
     mean_PSRF_par    = mean_gelman_par,
     mean_PSRF_all    = mean_gelman_all,
+    max_PSRF_all     = max_gelman_all,
+    n_PSRF_above_1.1 = n_above_1.1,
+    converged        = !is.na(max_gelman_all) & max_gelman_all <= 1.1,
     runtime_mins     = runtime_mins,
     n_burn           = n_burn,
     n_post           = n_post,
@@ -441,8 +517,9 @@ fit_one_model <- function(model_name, spec) {
   write_csv(summary_row,
             file.path(out_dir, paste0("summary_", model_name, ".csv")))
 
-  cat(sprintf("Model: %-15s DIC = %.1f | mean PSRF (all) = %.4f\n",
-              model_name, dic_val, mean_gelman_all))
+  cat(sprintf("Model: %-26s DIC = %.1f | mean PSRF = %.4f | max PSRF = %.4f%s\n",
+              model_name, dic_val, mean_gelman_all, max_gelman_all,
+              if (!is.na(max_gelman_all) && max_gelman_all > 1.1) "  *** NOT CONVERGED ***" else ""))
 
   summary_row
 }
