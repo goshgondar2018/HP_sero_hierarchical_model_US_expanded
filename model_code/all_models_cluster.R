@@ -34,9 +34,16 @@ dir.create(fig_dir, showWarnings = FALSE, recursive = TRUE)
 # *****************************************************************************
 load("data/df_hp_usa_w_final.Rdata")
 
+second_Nom_study=data.frame(study_id="NomJInf2002",study_n=261.00,subgroup="Japanese",subgroup_race_ethnicity="Japanese",
+subgroup_n=261.00,age=72.5,time_period=1982,birth_cohort=1909.5,seer_race_ethnicity="Non-Hispanic Asian or Pacific Islander",
+race_ethnicity_notes=NA,hp_num=174+19,hp_denom=261.00,hp_pct=73.9,hp_notes=NA,version=NA,immigrant_n=0.16*261,year_pub=2002,
+year=NA,race_f="Non-Hispanic Asian",total=261.00,HP=174+19,prev=74,prev_ci_lb=68,prev_ci_ub=79,birthplaceUS=NA)
+
 data_model <- df_hp_usa_w_final %>%
   arrange(race_f, year) %>%
-  filter(race_f != "Other") %>%
+  filter(race_f != "Other") 
+
+data_model_complete=rbind.data.frame(data_model,second_Nom_study)%>%
   mutate(
     study_id_fac = factor(study_id),
     race_fac     = factor(race_f),
@@ -45,15 +52,16 @@ data_model <- df_hp_usa_w_final %>%
     birth_cohort_cat = ifelse(birth_cohort < 1960, 0, 1)
   )
 
-data_model_filtered <- data_model %>%
-  #filter(study_id != "SawJRhe2004") %>%
-  filter(!(study_id == "GooJImm2003" & subgroup_n == 384.00)) %>% # removing duplicates 
-  filter(!(study_id == "FelBirt2007" & subgroup_n == 147.00)) %>% # removing duplicates 
-  filter(!(study_id == "ParClin2000" & subgroup_n == 2080.00)) %>% # removing duplicates 
-  filter(!(study_id == "ParClin2000" & subgroup_n == 1040.00)) %>% # removing duplicates 
-  filter(!(study_id == "CorCanc1990" & age == 0.0410)) %>% # removing implausible early age reported prev
-  filter(!(study_id == "CorCanc1990" & age == 0.2500)) %>% # removing implausible early age reported prev
-  filter(!(study_id == "CorCanc1990" & age == 0.7085)) # removing implausible early age reported prev
+data_model_filtered <- data_model_complete %>%
+  filter(study_id != 'CorCanc1990') %>%
+  filter(study_id != 'GraGast1991') %>%
+  filter(study_id != 'SawJRhe2004') %>%
+  filter(study_id != 'MuhJInf2015') %>%
+  filter(study_id != 'EppCanc2011_3') %>%
+  filter(!(study_id == 'GooJImm2003' & subgroup_n == 384.00)) %>%
+  filter(!(study_id == 'FelBirt2007' & subgroup_n == 147.00)) %>%
+  filter(!(study_id == 'ParClin2000' & subgroup_n == 2080.00)) %>%
+  filter(!(study_id == 'ParClin2000' & subgroup_n == 1040.00))
 
 total_pop=sum(unique(data_model_filtered$subgroup_n))
 
@@ -222,6 +230,37 @@ model_study_re <- paste0("model{
   ForMCMCConv[16] <- sd_study
 }")
 
+model_kappa_global_study_re <- paste0("model{
+  for (i in 1:N){
+    y[i]   ~ dbinom(pi[i], n[i])
+    pi[i]  ~ dbeta(a[i], b[i])
+    a[i]   <- p[i] * theta
+    b[i]   <- (1 - p[i]) * theta
+
+    p[i]     <- 0.001 + 0.998 * p_raw[i]
+    p_raw[i] <- alpha[i] * (1 - exp(-(gamma[i] * x[i])^kappa))
+
+    logit(alpha[i]) <- par[inds[i],1] + par[inds[i],2]*bc[i] + study_re[study_id[i]]
+    log(gamma[i])   <- par[inds[i],3] + par[inds[i],4]*bc[i]
+  }
+
+  log_theta ~ dnorm(3, 1)
+  theta     <- exp(log_theta)
+
+  for (s in 1:n_studies){
+    study_re[s] ~ dnorm(0, tau_study)
+  }
+  tau_study ~ dgamma(2, 0.5)
+  sd_study  <- 1/sqrt(tau_study)
+
+  log_kappa ~ dnorm(0, 0.4)
+  kappa     <- exp(log_kappa)
+", common_block, "
+  ForMCMCConv[15] <- theta
+  ForMCMCConv[16] <- kappa
+  ForMCMCConv[17] <- sd_study
+}")
+
 model_kappa_partial_study_re <- paste0("model{
   for (i in 1:N){
     y[i]   ~ dbinom(pi[i], n[i])
@@ -294,6 +333,13 @@ MODEL_LIST <- list(
                       "deviance")
   ),
 
+  kappa_global_study_re = list(
+    model_string = model_kappa_global_study_re,
+    data         = c(base_data, list(n_studies = n_studies, study_id = study_id)),
+    monitor      = c("ForMCMCConv", "mub", "var_b",  "par", "theta", "kappa",
+                     "sd_study", "study_re", "deviance")
+  ),
+  
   kappa_partial_study_re = list(
     model_string = model_kappa_partial_study_re,
     data         = c(base_data, list(n_studies = n_studies, study_id = study_id)),
