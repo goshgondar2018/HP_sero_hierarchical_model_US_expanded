@@ -102,7 +102,7 @@ common_block <- "
   ## fixed effects
   mub[1] ~ dt(0, 1, 1)
   mub[2] ~ dt(0, 1, 1)
-  mub[3] ~ dt(-3.2, 1, 3)
+  mub[3] ~ dt(-3.9, 1, 3)
   mub[4] ~ dt(0, 1, 1)
 
   taub[1:4,1:4] ~ dwish(OmegaB[1:4,1:4], 5)

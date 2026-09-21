@@ -20,6 +20,7 @@ set.seed(123)
 # *****************************************************************************
 #### Parallel execution settings ####
 # *****************************************************************************
+n_chains <- 3
 n_cores_avail <- as.integer(Sys.getenv("SLURM_CPUS_PER_TASK", unset = NA))
 if (is.na(n_cores_avail)) n_cores_avail <- parallel::detectCores()
 n_cores_use <- min(n_chains, max(1, n_cores_avail))
@@ -135,7 +136,7 @@ model_base_continuous_bc <- paste0("model{
   ## fixed effects
   mub[1] ~ dt(0, 1, 1)
   mub[2] ~ dt(0, 1, 1)
-  mub[3] ~ dt(-3.2, 1, 3)
+  mub[3] ~ dt(-3.9, 1, 3)
   mub[4] ~ dt(0, 1, 1)
   
   taub[1:4,1:4] ~ dwish(OmegaB[1:4,1:4], 5)
@@ -208,7 +209,7 @@ model_RW_continuous_bc <- paste0("model{
     par_gamma0[j] ~ dt(mub[3], taub_diag[3], 3)
   }
   mub[1] ~ dt(0, 1, 1)
-  mub[3] ~ dt(-3.2, 1, 3)
+  mub[3] ~ dt(-3.9, 1, 3)
   taub_diag[1] ~ dgamma(2, 1)
   taub_diag[3] ~ dgamma(2, 1)
 
@@ -282,7 +283,7 @@ model_RW_expanded_continuous_bc <- paste0("model{
     par_gamma0[j] ~ dt(mub[3], taub_diag[3], 3)
   }
   mub[1] ~ dt(0, 1, 1)
-  mub[3] ~ dt(-3.2, 1, 3)
+  mub[3] ~ dt(-3.9, 1, 3)
   taub_diag[1] ~ dgamma(2, 1)
   taub_diag[3] ~ dgamma(2, 1)
 
