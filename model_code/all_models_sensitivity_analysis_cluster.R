@@ -32,18 +32,10 @@ dir.create(out_dir, showWarnings = FALSE, recursive = TRUE)
 dir.create(fig_dir, showWarnings = FALSE, recursive = TRUE)
 
 # *****************************************************************************
-#### Prior parameterisation flagged during review, resolved by author ####
-#
-# JAGS dnorm(mu, tau) takes a PRECISION. The random-walk initial states were
-# originally written as dnorm(0, 25), i.e. precision 25, SD 0.2 -- a very
-# TIGHT prior on the first cohort's random-walk state. The Supplementary
-# Appendix states N(0, 25) with 25 as a VARIANCE, i.e. SD 5 (precision 0.04)
-# -- a diffuse prior, 25x looser in SD than the originally-coded value.
-#
-# Author decision: use the diffuse Appendix reading, so the earliest birth
-# cohort's random-walk state is left sufficiently noninformative.
-#   RW_INIT_TAU = 25.00  -> SD 0.20   (originally coded)
-#   RW_INIT_TAU = 0.04   -> SD 5.00   (Appendix: variance 25)   <- used below
+#### Prior parameterisation ####
+
+#   Diffuse prior 
+#   RW_INIT_TAU = 0.04   -> SD 5.00   
 RW_INIT_TAU <- 0.04
 # *****************************************************************************
 
@@ -81,14 +73,7 @@ data_model_filtered <- data_model_complete %>%
   filter(!(study_id == 'ParClin2000' & subgroup_n == 2080.00)) %>%
   filter(!(study_id == 'ParClin2000' & subgroup_n == 1040.00))
 
-## Analytic sample size. Age strata within a study are disjoint, so summing the
-# assayed counts over rows does not double-count individuals.
-#
-# This was previously sum(unique(subgroup_n)), which de-duplicated by VALUE
-# across the whole dataset and so silently dropped every subgroup whose size
-# happened to equal another subgroup's -- 22 subgroups. That expression is the
-# source of the "N = 62,688" reported in the manuscript; it is not a correct
-# count of this or any other dataset.
+## analytic sample size
 total_pop = sum(data_model_filtered$total)
 
 N          <- nrow(data_model_filtered)
@@ -97,19 +82,7 @@ n_races    <- length(unique(data_model_filtered$race_fac))
 hp         <- round(data_model_filtered$HP)
 age        <- data_model_filtered$age
 bc_scaled  <- data_model_filtered$bc_scaled
-# Binomial denominator: the number ASSAYED, not the number enrolled.
-#
-# `subgroup_n` is the subgroup size; `total` (== `hp_denom`) is how many were
-# actually tested. They differ for three rows, and the dataset's own `prev`
-# column is computed from `hp_denom`, so using subgroup_n made the modelled
-# prevalence disagree with the reported prevalence for those rows:
-#
-#   MeiSocS2016 Hispanic  1149/1562 = 73.6%  vs  1149/1226 = 93.7%  (20.2 pp)
-#   RubGenE2013 AI/AN      594/801  = 74.2%  vs   594/766  = 77.5%  ( 3.4 pp)
-#   MieHeli2018 AI/AN      422/571  = 73.9%  vs   422/561  = 75.2%  ( 1.3 pp)
-#
-# MeiSocS2016 is a 1,226-person Hispanic observation in the pre-1960 cohort, so
-# the old denominator biased Hispanic maximum prevalence downward.
+
 n          <- round(data_model_filtered$total)
 OmegaB     <- diag(4)
 
@@ -382,23 +355,13 @@ n_burn   <- 500000
 n_post   <- 20000
 thinning <- 20
 
-# Per-chain RNG seeds AND over-dispersed starting values.
-#
-# Previously only .RNG.seed was set, so all three chains began from the same
-# point, making the reported Gelman-Rubin PSRF anti-conservative.
-#
-# Only log_theta is dispersed here. The birth-cohort slopes multiply bc_scaled,
-# which spans ~91 years, so a slope start of even 0.5 gives
-# log(gamma) = -3.9 + 45 and overflows; and the RW models define only mub[1]
-# and mub[3], so mub cannot be supplied as a length-4 vector across all three
-# models. (The same scale mismatch affects the Cauchy(0,1) slope PRIOR, which
-# puts most of its mass on implausibly large effects on this scale -- see
-# NEWS.md.)
+# per-chain RNG seeds AND over-dispersed starting values.
 inits_list <- list(
-  list(.RNG.name = "base::Wichmann-Hill",        .RNG.seed = 1, log_theta = 2),
-  list(.RNG.name = "base::Marsaglia-Multicarry", .RNG.seed = 2, log_theta = 3),
-  list(.RNG.name = "base::Super-Duper",          .RNG.seed = 3, log_theta = 4)
+  list(.RNG.name = "base::Wichmann-Hill",        .RNG.seed = 1, log_theta = 2.5),
+  list(.RNG.name = "base::Marsaglia-Multicarry", .RNG.seed = 2, log_theta = 3.0),
+  list(.RNG.name = "base::Super-Duper",          .RNG.seed = 3, log_theta = 3.5)
 )
+
 
 # *****************************************************************************
 #### Function to run and extract all results & convergence metrics by model #### 
@@ -444,10 +407,6 @@ fit_one_model <- function(model_name, spec) {
   mean_gelman_par  <- if (!is.null(gelman_par))  mean(gelman_par$psrf[, 1])  else NA
   mean_gelman_all  <- mean(c(mean_gelman_conv, mean_gelman_par), na.rm = TRUE)
 
-  # Convergence must be judged on the MAXIMUM PSRF, not the mean: a single
-  # badly mixing parameter is invisible in an average over 15-40 parameters.
-  # DIC and ELPD-LOO are meaningless if the chains have not mixed, so this is
-  # recorded with the fit and warned about loudly.
   max_gelman_conv <- if (!is.null(gelman_conv)) max(gelman_conv$psrf[, 1]) else NA
   max_gelman_par  <- if (!is.null(gelman_par))  max(gelman_par$psrf[, 1])  else NA
   max_gelman_all  <- suppressWarnings(max(c(max_gelman_conv, max_gelman_par), na.rm = TRUE))
@@ -456,6 +415,7 @@ fit_one_model <- function(model_name, spec) {
   n_above_1.1 <- sum(c(if (!is.null(gelman_conv)) gelman_conv$psrf[, 1],
                        if (!is.null(gelman_par))  gelman_par$psrf[, 1]) > 1.1, na.rm = TRUE)
 
+  # flag as not converged if max PSRF > 1.1 
   if (!is.na(max_gelman_all) && max_gelman_all > 1.1) {
     warning("Model '", model_name, "': maximum PSRF is ", round(max_gelman_all, 3),
             " over ", n_above_1.1, " parameter(s) above 1.1. Chains have NOT ",

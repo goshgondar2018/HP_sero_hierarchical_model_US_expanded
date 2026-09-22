@@ -42,25 +42,12 @@ data_model_filtered <- data_model_complete %>%
   filter(!(study_id == 'ParClin2000' & subgroup_n == 2080.00)) %>%
   filter(!(study_id == 'ParClin2000' & subgroup_n == 1040.00))
 
-# Analytic sample size. Age strata within a study are disjoint, so summing the
-# assayed counts over rows does not double-count individuals.
-#
-# This was previously sum(unique(subgroup_n)), which de-duplicated by VALUE
-# across the whole dataset and so silently dropped every subgroup whose size
-# happened to equal another subgroup's -- 22 subgroups. That expression is the
-# source of the "N = 62,688" reported in the manuscript; it is not a correct
-# count of this or any other dataset.
+# analytic sample size
 total_pop = sum(data_model_filtered$total)
 
-# Observed prevalence data points.
-#
-# Cells are pooled by COUNTS rather than by averaging subgroup prevalences.
-# The previous version took mean(prev) and mean(prev_ci_lb/ub) across the
-# subgroups falling in each race x era x rounded-age cell, which weighted a
-# 15-person subgroup the same as a 6,000-person one, and averaged confidence
-# limits (which is not a valid interval for the pooled cell). Pooling the
-# numerators and denominators and taking a Jeffreys binomial interval gives
-# the cell's actual observed prevalence and a coherent interval.
+# observed prevalence data points
+## cells are pooled by COUNTS rather than by averaging subgroup prevalences.
+
 df_p_curves_obs <- data_model_filtered %>%
   filter(age > 0) %>%
   mutate(era     = factor(ifelse(birth_cohort_cat == 0, "Pre-1960", "1960+"),
@@ -92,8 +79,8 @@ race_titles <- c("Hispanic",
                  "Non-Hispanic White")
 era_labels  <- c("Pre-1960", "1960+")
 
-dir.create("figures_aug20_2026", showWarnings = FALSE)
-dir.create("figures_aug20_2026/binary_cohort_figs", showWarnings = FALSE, recursive = TRUE)
+dir.create("figures_sep22_2026", showWarnings = FALSE)
+dir.create("figures_sep22_2026/binary_cohort_figs", showWarnings = FALSE, recursive = TRUE)
 dir.create("results", showWarnings = FALSE)
 
 get_vec <- function(mat_all, base_name, idx) {
@@ -188,12 +175,6 @@ generate_densplot_function <- function(draws, labels, ncol_facet = 1) {
 }
 
 
-# gtsave() to PNG requires the webshot2 + chromote packages and a headless
-# Chrome install. When those are missing it throws, which previously aborted
-# the whole per-model loop after the first model -- losing every subsequent
-# model's figures for the sake of a diagnostics table. This always writes the
-# table as CSV (which is what you actually want for reporting PSRF values) and
-# treats the PNG as best-effort.
 save_psrf_table <- function(df, png_path) {
   csv_path <- sub("\\.png$", ".csv", png_path)
   readr::write_csv(df, csv_path)
@@ -236,15 +217,7 @@ summarize_max_prev_RD <- function(mat, era_label) {
 #
 #   ID = 100 * [ sum_i |p_i - p_ref| / n_comparison ] / p_ref
 #
-# Two corrections relative to the previous inline version:
-#  * abs() is applied. Without it, groups above and below the referent cancel,
-#    understating the index (and giving 0 for a perfectly symmetric spread).
-#  * The sum is divided by the number of COMPARISON groups (4), not by all 5.
-#    The referent contributes a zero deviation, so dividing by 5 shrank the
-#    index by a further factor of 4/5.
-# The interval is now the 2.5/97.5 percentiles of the index's own posterior
-# rather than a ratio of separately-summarised means and quantiles, which is
-# not a valid interval for a nonlinear function of correlated parameters.
+
 summarize_max_prev_IOD <- function(mat, era_label, referent = "NHW") {
   mat <- as.matrix(mat)
   stopifnot(nrow(mat) == length(race_labels))
@@ -287,7 +260,7 @@ summarize_prev_change <- function(mat_pre, mat_post) {
 summarize_max_prev_RR <- function(mat, era_label) {
   mat <- as.matrix(mat)
   stopifnot(nrow(mat) == length(race_labels))
-  rownames(mat) <- race_labels       # name rows so we don't rely on position
+  rownames(mat) <- race_labels      
 
   # divide every column (iteration) by that same iteration's NHW row value (referent group)
   rr_mat <- sweep(mat, 2, mat["NHW", ], FUN = "/")
@@ -381,25 +354,11 @@ process_model <- function(model_name, cfg) {
         foi_num <- a_rep * g_rep * kappa_rep * (g_age_raw_vec)^(kappa_rep - 1) * exp_neg
       }
 
-      # Force of infection: lambda(a) = (dF/da) / (1 - F(a))   [Appendix Eq. 3, 17]
-      #
-      # F(a) is p_raw_mat = alpha*(1 - exp(-(gamma*a)^kappa)). The previous
-      # denominator was `1 - p_mat * one_minus_exp`, which multiplied the
-      # cumulative-infection term in a SECOND time (p_mat already is F(a),
-      # rescaled). That made the denominator too large at every age, so every
-      # force of infection was understated -- by 14% at age 5, 27% at age 20 and
-      # 23% at age 40 for alpha = 0.8, gamma = 0.05. Because the bias is
-      # age-dependent it also shifted the apparent peak FOI and the age at which
-      # it occurs, differently for each race/ethnicity group.
-      #
-      # p_raw_mat (not p_mat) is used so the denominator matches the prevalence
-      # curve reported below, which is also summarised from p_raw_mat.
+      # force of infection: lambda(a) = (dF/da) / (1 - F(a))   [Appendix Eq. 3, 17]
       foi_den <- pmax(1 - p_raw_mat, 1e-10)
       foi_mat <- foi_num / foi_den
 
-      # (gamma*a)^(kappa-1) is infinite at age 0 when kappa < 1, so the FOI is
-      # undefined there. The continuous-cohort script already dropped age 0;
-      # doing it here too keeps the two figure sets consistent.
+      # (gamma*a)^(kappa-1) is infinite at age 0 when kappa < 1, --> FOI undefined
       foi_mat[ages_vec == 0, ] <- NA
 
       if (b_idx == 1) {
@@ -481,7 +440,7 @@ process_model <- function(model_name, cfg) {
   axis.text.y=element_text(size=20),
   axis.title.x=element_text(size=20),
   axis.title.y=element_text(size=20))
-  ggsave(paste0("./figures_aug20_2026/binary_cohort_figs/foi_curves_by_race_era_", tag, ".png"), width = 12, height = 8)
+  ggsave(paste0("./figures_sep22_2026/binary_cohort_figs/foi_curves_by_race_era_", tag, ".png"), width = 12, height = 8)
 
 # combined predicted and observed prevalence plot
   df_p_plot <- df_p_hat_race_final %>% # filter(age > 0) %>%
@@ -527,7 +486,7 @@ process_model <- function(model_name, cfg) {
       axis.title.y=element_text(size=15)) +
   guides(color = guide_legend(override.aes = list(size = 3)),
          fill  = guide_legend(override.aes = list(alpha = 0.4)))
-  ggsave(paste0("./figures_aug20_2026/binary_cohort_figs/predicted_vs_observed_prev_", tag, ".png"), width = 12, height = 8)
+  ggsave(paste0("./figures_sep22_2026/binary_cohort_figs/predicted_vs_observed_prev_", tag, ".png"), width = 12, height = 8)
 
   #df_p_plot <- df_p_hat_race_final %>% # filter(age > 0) %>%
    # mutate(era = factor(era, levels = era_labels))
@@ -547,7 +506,7 @@ process_model <- function(model_name, cfg) {
   axis.text.y=element_text(size=20),
   axis.title.x=element_text(size=20),
   axis.title.y=element_text(size=20))
-  ggsave(paste0("./figures_aug20_2026/binary_cohort_figs/prev_curves_by_race_era_", tag, ".png"), width = 12, height = 8)
+  ggsave(paste0("./figures_sep22_2026/binary_cohort_figs/prev_curves_by_race_era_", tag, ".png"), width = 12, height = 8)
 
   max_prev <- df_p_hat_race_final %>% filter(age == fin_age) %>%
     mutate(era = factor(era, levels = era_labels))
@@ -572,7 +531,7 @@ process_model <- function(model_name, cfg) {
   axis.text.y=element_text(size=20),
   axis.title.x=element_text(size=20),
   axis.title.y=element_text(size=20))
-  ggsave(paste0("./figures_aug20_2026/binary_cohort_figs/max_prev_both_eras_", tag, ".png"), width = 10, height = 8)
+  ggsave(paste0("./figures_sep22_2026/binary_cohort_figs/max_prev_both_eras_", tag, ".png"), width = 10, height = 8)
 
   prev_at_5 <- df_p_hat_race_final %>% filter(age == 5) %>%
     mutate(era = factor(era, levels = era_labels))
@@ -597,7 +556,7 @@ process_model <- function(model_name, cfg) {
   axis.text.y=element_text(size=20),
   axis.title.x=element_text(size=20),
   axis.title.y=element_text(size=20))
-  ggsave(paste0("./figures_aug20_2026/binary_cohort_figs/prev_at_5_both_eras_", tag, ".png"), width = 10, height = 8)
+  ggsave(paste0("./figures_sep22_2026/binary_cohort_figs/prev_at_5_both_eras_", tag, ".png"), width = 10, height = 8)
 
   ## change in max prevalence between eras, computed per posterior draw
   max_prev_percent_change_summarized <- summarize_prev_change(max_prev_draws_pre,
@@ -653,7 +612,7 @@ process_model <- function(model_name, cfg) {
   legend.text=element_text(size=20),legend.title=element_text(size=20),axis.text.y=element_text(size=20),
         axis.title.x=element_blank(), axis.title.y=element_text(size=20))+ylab("Median age of infection (years)")
   
-  ggsave(paste0("./figures_aug20_2026/binary_cohort_figs/median_age_inf_", tag, ".png"),width = 10, height = 8) #paste0("./figures_aug20_2026/binary_cohort_figs/prev_at_5_both_eras_", tag, ".png"), width = 10, height = 8)
+  ggsave(paste0("./figures_sep22_2026/binary_cohort_figs/median_age_inf_", tag, ".png"),width = 10, height = 8) #paste0("./figures_sep22_2026/binary_cohort_figs/prev_at_5_both_eras_", tag, ".png"), width = 10, height = 8)
 
 
   
@@ -663,22 +622,22 @@ process_model <- function(model_name, cfg) {
   gamma1_labels <- paste0("gamma slope ", race_labels)
 
   generate_traceplot_function(t(m_alpha0), alpha0_labels)
-  ggsave(paste0("./figures_aug20_2026/binary_cohort_figs/alpha0_traceplot_", tag, ".png"), width = 12, height = 8)
+  ggsave(paste0("./figures_sep22_2026/binary_cohort_figs/alpha0_traceplot_", tag, ".png"), width = 12, height = 8)
   generate_traceplot_function(t(m_alpha1), alpha1_labels)
-  ggsave(paste0("./figures_aug20_2026/binary_cohort_figs/alpha1_traceplot_", tag, ".png"), width = 12, height = 8)
+  ggsave(paste0("./figures_sep22_2026/binary_cohort_figs/alpha1_traceplot_", tag, ".png"), width = 12, height = 8)
   generate_traceplot_function(t(m_gamma0), gamma0_labels)
-  ggsave(paste0("./figures_aug20_2026/binary_cohort_figs/gamma0_traceplot_", tag, ".png"), width = 12, height = 8)
+  ggsave(paste0("./figures_sep22_2026/binary_cohort_figs/gamma0_traceplot_", tag, ".png"), width = 12, height = 8)
   generate_traceplot_function(t(m_gamma1), gamma1_labels)
-  ggsave(paste0("./figures_aug20_2026/binary_cohort_figs/gamma1_traceplot_", tag, ".png"), width = 12, height = 8)
+  ggsave(paste0("./figures_sep22_2026/binary_cohort_figs/gamma1_traceplot_", tag, ".png"), width = 12, height = 8)
 
   generate_densplot_function(t(m_alpha0), alpha0_labels)
-  ggsave(paste0("./figures_aug20_2026/binary_cohort_figs/alpha0_densplot_", tag, ".png"), width = 12, height = 8)
+  ggsave(paste0("./figures_sep22_2026/binary_cohort_figs/alpha0_densplot_", tag, ".png"), width = 12, height = 8)
   generate_densplot_function(t(m_alpha1), alpha1_labels)
-  ggsave(paste0("./figures_aug20_2026/binary_cohort_figs/alpha1_densplot_", tag, ".png"), width = 12, height = 8)
+  ggsave(paste0("./figures_sep22_2026/binary_cohort_figs/alpha1_densplot_", tag, ".png"), width = 12, height = 8)
   generate_densplot_function(t(m_gamma0), gamma0_labels)
-  ggsave(paste0("./figures_aug20_2026/binary_cohort_figs/gamma0_densplot_", tag, ".png"), width = 12, height = 8)
+  ggsave(paste0("./figures_sep22_2026/binary_cohort_figs/gamma0_densplot_", tag, ".png"), width = 12, height = 8)
   generate_densplot_function(t(m_gamma1), gamma1_labels)
-  ggsave(paste0("./figures_aug20_2026/binary_cohort_figs/gamma1_densplot_", tag, ".png"), width = 12, height = 8)
+  ggsave(paste0("./figures_sep22_2026/binary_cohort_figs/gamma1_densplot_", tag, ".png"), width = 12, height = 8)
 
   if (!is.null(m_kappa)) {
     if (cfg$kappa_mode == "global") {
@@ -706,9 +665,9 @@ process_model <- function(model_name, cfg) {
                               paste0("./results/kappa_summary_",tag, ".csv"))
 
     generate_traceplot_function(kappa_draws, kappa_labels)
-    ggsave(paste0("./figures_aug20_2026/binary_cohort_figs/kappa_traceplot_", tag, ".png"), width = 12, height = 8)
+    ggsave(paste0("./figures_sep22_2026/binary_cohort_figs/kappa_traceplot_", tag, ".png"), width = 12, height = 8)
     generate_densplot_function(kappa_draws, kappa_labels)
-    ggsave(paste0("./figures_aug20_2026/binary_cohort_figs/kappa_densplot_", tag, ".png"), width = 12, height = 8)
+    ggsave(paste0("./figures_sep22_2026/binary_cohort_figs/kappa_densplot_", tag, ".png"), width = 12, height = 8)
   }
 
   if (cfg$has_study_re && exists("study_lookup")) {
@@ -757,7 +716,7 @@ process_model <- function(model_name, cfg) {
     #rownames(cluster_fit$gelman_conv$psrf)
     save_psrf_table(cbind.data.frame(parameter = gelman_multivariate_PSRF$param,
                                       PSRF = gelman_multivariate_PSRF$PSRF),
-                    paste0("./figures_aug20_2026/binary_cohort_figs/multivariate_PSRF_", tag, ".png"))
+                    paste0("./figures_sep22_2026/binary_cohort_figs/multivariate_PSRF_", tag, ".png"))
     }
   if (!is.null(cluster_fit$gelman_par)) {
     gelman_univariate_PSRF <- as.data.frame(cluster_fit$gelman_par$psrf[, 1])
@@ -769,7 +728,7 @@ process_model <- function(model_name, cfg) {
     #rownames(cluster_fit$gelman_par$psrf)
     save_psrf_table(cbind.data.frame(parameter = gelman_univariate_PSRF$param,
                                       PSRF = gelman_univariate_PSRF$PSRF),
-                    paste0("./figures_aug20_2026/binary_cohort_figs/univariate_PSRF_", tag, ".png"))
+                    paste0("./figures_sep22_2026/binary_cohort_figs/univariate_PSRF_", tag, ".png"))
   }
     
   cat("Finished:", model_name, "\n")

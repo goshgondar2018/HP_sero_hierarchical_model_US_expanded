@@ -2,7 +2,12 @@
 results_cluster/
 results_cluster_sensitivity_analysis/
 results/
-figures_aug20_2026/
+figures_*_20*/
+
+# Office lock files
+~$*.xlsx
+~$*.xls
+~$*.docx
 
 # R session artefacts
 .Rhistory
