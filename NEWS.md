@@ -156,6 +156,21 @@ inline at each definition. Both now resolved:
   chain. The same scale mismatch affects the Cauchy(0,1) slope PRIOR, which on
   this scale puts most of its mass on implausibly large effects -- centring
   and scaling `bc_scaled`, for example per decade, is worth considering.)
+
+  **Update:** with the original spread (`mub` offsets of ±1.5/0.5/1.0/0.5,
+  `log_theta` ±1), running the full 500,000-iteration burn-in in
+  `all_models_cluster.R` produced `max_PSRF_all` in the 1.2–2.1 range across
+  all 6 models -- the chains weren't merging back together within budget. This
+  isn't necessarily a new problem: with identical starts there was no way for
+  the diagnostic to detect it in the first place (all chains inherit the same
+  bias from the same starting point, so between-chain disagreement -- the only
+  thing PSRF measures -- was structurally impossible to observe). Rather than
+  lengthen the already-expensive burn-in, the dispersion was halved (author
+  decision) -- still genuinely non-identical starts, just a shorter distance
+  for the chains to travel back to consensus:
+  `mub` offsets ±0.75/0.25/0.5/0.25, `log_theta` ±0.5. **Requires refitting**;
+  worth checking whether `max_PSRF_all` comes down to a reasonable range
+  before deciding if a longer burn-in is also needed.
 - **Convergence was summarised by the mean PSRF**, which hides a single badly
   mixing parameter among 15-40. Both model scripts now also record
   `max_PSRF_all`, `n_PSRF_above_1.1` and a `converged` flag, print the maximum

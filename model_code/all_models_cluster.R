@@ -405,13 +405,20 @@ thinning <- 20
 # The values below spread the population-level parameters low/central/high.
 # (Note that set.seed() in R does not affect JAGS sampling at all -- only
 # .RNG.seed does.)
+#
+# Original spread (mub offsets of +-1.5/0.5/1.0/0.5, log_theta +-1) produced
+# max_PSRF_all in the 1.2-2.1 range across all 6 models with the current
+# 500,000-iteration burn-in -- the chains weren't merging back together in
+# time. Halved here as a cheaper first attempt than lengthening burn-in;
+# still genuinely dispersed (not identical starts), just a shorter distance
+# for the chains to travel back to consensus.
 inits_list <- list(
   list(.RNG.name = "base::Wichmann-Hill",        .RNG.seed = 1,
-       mub = c(-1.5, -0.5, -4.9, -0.5), log_theta = 2),
+       mub = c(-0.75, -0.25, -4.4, -0.25), log_theta = 2.5),
   list(.RNG.name = "base::Marsaglia-Multicarry", .RNG.seed = 2,
-       mub = c( 0.0,  0.0, -3.9,  0.0), log_theta = 3),
+       mub = c( 0.0,   0.0,  -3.9,  0.0),  log_theta = 3.0),
   list(.RNG.name = "base::Super-Duper",          .RNG.seed = 3,
-       mub = c( 1.5,  0.5, -2.9,  0.5), log_theta = 4)
+       mub = c( 0.75,  0.25, -3.4,  0.25), log_theta = 3.5)
 )
 
 # *****************************************************************************
