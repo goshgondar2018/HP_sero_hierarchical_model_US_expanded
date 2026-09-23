@@ -171,6 +171,26 @@ inline at each definition. Both now resolved:
   `mub` offsets ±0.75/0.25/0.5/0.25, `log_theta` ±0.5. **Requires refitting**;
   worth checking whether `max_PSRF_all` comes down to a reasonable range
   before deciding if a longer burn-in is also needed.
+
+  **Continuous-cohort models also don't converge** (`max_PSRF_all`:
+  `base_continuous_bc` 1.30, `RW_continuous_bc` 1.18,
+  `RW_expanded_continuous_bc` 2.42), despite only `log_theta` being
+  deliberately dispersed there. Two distinct causes, not one: (1)
+  `base_continuous_bc`'s slope terms multiply `bc_scaled` directly (see
+  above) -- a badly-scaled covariate/prior combination that makes for
+  inherently slow mixing regardless of initialization; (2) the two RW
+  models have no such slope, but carry a much higher-dimensional,
+  temporally-correlated state space instead (~91 `rw_alpha_pop`/
+  `rw_gamma_pop` states, plus ~5×91×2 more race-specific deviation states
+  for the expanded model) -- state-space models with many time points are
+  a classic slow-mixing case for Gibbs/Metropolis samplers, and severity
+  scales with dimensionality, consistent with `RW_expanded` being by far
+  the worst of the three. **Author decision: left as-is for now** --
+  rescaling `bc_scaled` (e.g. to decades) would likely help
+  `base_continuous_bc` specifically, but touches both the model and
+  figures scripts and changes what the slope coefficients mean (per-year
+  vs. per-decade), so revisit deliberately rather than as a side effect of
+  chasing convergence.
 - **Convergence was summarised by the mean PSRF**, which hides a single badly
   mixing parameter among 15-40. Both model scripts now also record
   `max_PSRF_all`, `n_PSRF_above_1.1` and a `converged` flag, print the maximum
