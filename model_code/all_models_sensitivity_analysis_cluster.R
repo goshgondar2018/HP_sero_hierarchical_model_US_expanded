@@ -34,9 +34,17 @@ dir.create(fig_dir, showWarnings = FALSE, recursive = TRUE)
 # *****************************************************************************
 #### Prior parameterisation ####
 
-#   Diffuse prior 
-#   RW_INIT_TAU = 0.04   -> SD 5.00   
-RW_INIT_TAU <- 0.04
+# Reverted to the tight/originally-coded value: par_alpha0[j]/mub[1] and
+# rw_alpha_pop's own level are only identified through their SUM in the
+# likelihood (logit(alpha[i]) = par_alpha0[inds[i]] + rw_alpha_pop[cohort_idx[i]]
+# + study_re[...]), so a diffuse prior on rw_alpha_pop[1] lets MCMC wander
+# along that flat ridge -- this is what trace plots of RW_continuous_bc showed
+# (par_alpha0 and rw_alpha_pop moving together, in lockstep, across every
+# race/cohort). A tight prior anchors one end of the ridge and constrains that
+# wandering, even though it doesn't remove the underlying non-identifiability.
+#   RW_INIT_TAU = 25.00  -> SD 0.20   (tight; used below)
+#   RW_INIT_TAU = 0.04   -> SD 5.00   (diffuse; Appendix reading, reverted)
+RW_INIT_TAU <- 25.00
 # *****************************************************************************
 
 # *****************************************************************************

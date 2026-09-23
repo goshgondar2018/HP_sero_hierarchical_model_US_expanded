@@ -178,19 +178,40 @@ inline at each definition. Both now resolved:
   deliberately dispersed there. Two distinct causes, not one: (1)
   `base_continuous_bc`'s slope terms multiply `bc_scaled` directly (see
   above) -- a badly-scaled covariate/prior combination that makes for
-  inherently slow mixing regardless of initialization; (2) the two RW
-  models have no such slope, but carry a much higher-dimensional,
-  temporally-correlated state space instead (~91 `rw_alpha_pop`/
-  `rw_gamma_pop` states, plus ~5×91×2 more race-specific deviation states
-  for the expanded model) -- state-space models with many time points are
-  a classic slow-mixing case for Gibbs/Metropolis samplers, and severity
-  scales with dimensionality, consistent with `RW_expanded` being by far
-  the worst of the three. **Author decision: left as-is for now** --
-  rescaling `bc_scaled` (e.g. to decades) would likely help
-  `base_continuous_bc` specifically, but touches both the model and
-  figures scripts and changes what the slope coefficients mean (per-year
-  vs. per-decade), so revisit deliberately rather than as a side effect of
-  chasing convergence.
+  inherently slow mixing regardless of initialization. **Author decision:
+  left as-is for now** -- rescaling `bc_scaled` (e.g. to decades) would
+  likely help, but touches both the model and figures scripts and changes
+  what the slope coefficients mean (per-year vs. per-decade), so revisit
+  deliberately rather than as a side effect of chasing convergence.
+  (2) Trace plots for `RW_continuous_bc` (`par_alpha0`/`par_gamma0` by
+  race, `rw_alpha_pop`/`rw_gamma_pop` by cohort) showed the same slow,
+  synchronized wandering in every panel regardless of race or cohort --
+  chain 2 riding high and chain 3 riding low at the same iterations across
+  every one of them. That's the signature of a genuine non-identifiability,
+  not just high dimensionality: `par_alpha0[j]`/`mub[1]` and
+  `rw_alpha_pop`'s own level enter the likelihood only as a sum
+  (`logit(alpha[i]) = par_alpha0[inds[i]] + rw_alpha_pop[cohort_idx[i]] +
+  study_re[...]`), so shifting every race intercept up by δ while shifting
+  the whole `rw_alpha_pop` trajectory down by δ leaves every prediction
+  unchanged -- a flat ridge in the posterior that MCMC wanders along
+  slowly. The diffuse `RW_INIT_TAU` (0.04, SD 5) adopted above made this
+  worse, not better, by giving `rw_alpha_pop[1]` -- one end of that ridge
+  -- more room to wander. **Author decision: revert `RW_INIT_TAU` to 25.00
+  (SD 0.2)** as a pragmatic mitigation -- it anchors one end of the ridge
+  and constrains the wandering, without removing the underlying
+  non-identifiability (a proper fix would need a structural constraint,
+  e.g. a sum-to-zero constraint on `rw_alpha_pop`, which is a larger
+  reparameterization left for later if this isn't sufficient). This is a
+  reasonable stopping point here because every downstream use of these
+  parameters (predicted prevalence, FOI, median age of infection) depends
+  only on the *sum* `par_alpha0[inds[i]] + rw_alpha_pop[cohort_idx[i]]`,
+  which can be well-identified even when the individual components aren't
+  -- worth checking `max_PSRF_all` on the derived prevalence curves
+  specifically, not just the raw parameters, before concluding more work
+  is needed. **Requires refitting.** `RW_expanded_continuous_bc` likely
+  has the same underlying issue (same additive structure, plus its own
+  race-specific deviations), and remains the least converged of the three;
+  not separately addressed here.
 - **Convergence was summarised by the mean PSRF**, which hides a single badly
   mixing parameter among 15-40. Both model scripts now also record
   `max_PSRF_all`, `n_PSRF_above_1.1` and a `converged` flag, print the maximum
