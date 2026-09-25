@@ -1,5 +1,30 @@
 # NEWS
 
+## Unreleased
+
+- **`figures_cluster_sensitivity_analysis_sep15.R` read fit objects from the
+  wrong directory.** All three `readRDS()` calls (`base_continuous_bc`,
+  `RW_continuous_bc`, `RW_expanded_continuous_bc`) pointed at
+  `./results_cluster/`, which only ever receives the 6 *binary*-cohort model
+  fits from `all_models_cluster.R`; the continuous-cohort fits are saved to
+  `./results_cluster_sensitivity_analysis/` by
+  `all_models_sensitivity_analysis_cluster.R`. Fixed to the correct directory
+  for all three. Found while adding the effective-sample-size calculation
+  below, which reads one of these same fit objects.
+- **Added overdispersion-adjusted effective sample size**, alongside the
+  existing raw `total_pop`, for the two selected models (`study_re` for the
+  binary-cohort analysis, `RW_continuous_bc` for the continuous-cohort
+  analysis). For `y ~ BetaBinomial(n, p*theta, (1-p)*theta)`, `Var(y)` is
+  inflated relative to a plain `Binomial(n, p)` by a design effect
+  `DEFF = (n + theta) / (1 + theta)`; the effective sample size is the
+  plain-binomial `n` giving the same precision:
+  `n_eff = n*(1 + theta) / (n + theta)`, computed per row and per posterior
+  draw of `theta`, then summed across rows and reported with a 95% CrI.
+  Written to `results/effective_sample_size_StudyRE.csv` and
+  `results/effective_sample_size_RWcohort.csv`. Requires the corresponding
+  model to already be fit (reads the saved `.rds`); no refit needed for this
+  calculation itself.
+
 ## Unreleased (branch `fix/foi-and-denominators`)
 
 A second review pass, run independently against the same co-author workbook

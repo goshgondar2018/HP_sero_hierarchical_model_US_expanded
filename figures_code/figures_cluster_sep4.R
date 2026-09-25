@@ -741,5 +741,35 @@ for (model_name in names(model_configs)) {
   results_all[[model_name]] <- process_model(model_name, model_configs[[model_name]])
 }
 
+# *****************************************************************************
+# Effective sample size, adjusted for beta-binomial overdispersion (theta),
+# for the selected model only (study_re -- Appendix Section D).
+#
+# For y ~ BetaBinomial(n, p*theta, (1-p)*theta), Var(y) is inflated relative to
+# a plain Binomial(n, p) by a design effect DEFF = (n + theta) / (1 + theta).
+# The effective sample size is the plain-binomial n that would give the same
+# precision: n_eff = n / DEFF = n*(1 + theta) / (n + theta), computed per row
+# and per posterior draw of theta, then summed across rows -- same structure
+# as total_pop, but downweighted for between-study/subgroup overdispersion.
+# *****************************************************************************
+compute_effective_n <- function(fit_path, n_vec) {
+  fit_obj <- readRDS(fit_path)
+  theta_draws <- as.matrix(fit_obj$mcmc_all)[, "theta"]
+  eff_n_by_draw <- colSums(outer(n_vec, theta_draws, function(n, th) n * (1 + th) / (n + th)))
+  data.frame(
+    total_pop  = sum(n_vec),
+    eff_n_mean = mean(eff_n_by_draw),
+    eff_n_LB   = quantile(eff_n_by_draw, 0.025),
+    eff_n_UB   = quantile(eff_n_by_draw, 0.975)
+  )
+}
+
+eff_n_selected <- compute_effective_n(model_configs$study_re$file, data_model_filtered$total)
+write_csv(eff_n_selected, "results/effective_sample_size_StudyRE.csv")
+cat(sprintf(
+  "Effective sample size (study_re, overdispersion-adjusted): %.0f (95%% CrI: %.0f, %.0f); raw total_pop = %.0f\n",
+  eff_n_selected$eff_n_mean, eff_n_selected$eff_n_LB, eff_n_selected$eff_n_UB, eff_n_selected$total_pop
+))
+
 
 
