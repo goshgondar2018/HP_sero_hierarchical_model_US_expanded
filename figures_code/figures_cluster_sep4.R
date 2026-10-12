@@ -12,7 +12,7 @@ library(gt)
 #### Data prep  ####
 # *****************************************************************************
 
-load("data/df_hp_usa_w_final.Rdata")
+load("data/df_hp_usa_w_final_unweighted_nhanes.Rdata")
 second_Nom_study=data.frame(study_id="NomJInf2002",study_n=261.00,subgroup="Japanese",subgroup_race_ethnicity="Japanese",
 subgroup_n=261.00,age=72.5,time_period=1982,birth_cohort=1909.5,seer_race_ethnicity="Non-Hispanic Asian or Pacific Islander",
 race_ethnicity_notes=NA,hp_num=174+19,hp_denom=261.00,hp_pct=73.9,hp_notes=NA,version=NA,immigrant_n=0.16*261,year_pub=2002,

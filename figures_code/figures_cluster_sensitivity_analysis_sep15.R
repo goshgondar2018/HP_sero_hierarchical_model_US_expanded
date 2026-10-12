@@ -17,7 +17,7 @@ dir.create("results", showWarnings = FALSE)
 #### Shared data prep (identical across all three models) ####
 # *****************************************************************************
 
-load("data/df_hp_usa_w_final.Rdata")
+load("data/df_hp_usa_w_final_unweighted_nhanes.Rdata")
 
 second_Nom_study=data.frame(study_id="NomJInf2002",study_n=261.00,subgroup="Japanese",subgroup_race_ethnicity="Japanese",
 subgroup_n=261.00,age=72.5,time_period=1982,birth_cohort=1909.5,seer_race_ethnicity="Non-Hispanic Asian or Pacific Islander",

@@ -2,6 +2,30 @@
 
 ## Unreleased
 
+- **Switched to unweighted NHANES data, via a new `data/re_extracting_nhanes_data.R`**
+  that re-aggregates raw NHANES III (1988-1994) and NHANES 1999-2000 records
+  by age/sex/race using unweighted counts (`total`/`HP`), replacing the
+  fractional, survey-weighted pseudo-counts previously baked into
+  `df_hp_usa_w_final.Rdata` (identified during the earlier review as
+  producing pooled race-specific prevalence that didn't match the published
+  McMahon et al. Table 1 NHANES estimates, especially for NHW). Output is
+  `data/df_hp_usa_w_final_unweighted_nhanes.Rdata`.
+  All five model/figures/LOO scripts were updated to `load()` this file in
+  place of the old one, but every one of them had the same bug: they loaded
+  `data/df_hp_usa_final_unweighted_nhanes.Rdata` (object name
+  `df_hp_usa_final`, no "w") while every line downstream still referenced
+  `df_hp_usa_w_final` (with "w") -- a plain object-name mismatch. In a fresh
+  session this errors out immediately ("object 'df_hp_usa_w_final' not
+  found"); in an interactive session with a stale `df_hp_usa_w_final` left
+  over from an earlier `load()` of the old file, it would have **silently
+  kept using the old weighted data with no error at all**. Fixed by pointing
+  all five scripts at the correctly-named
+  `df_hp_usa_w_final_unweighted_nhanes.Rdata` (content-identical, verified
+  via `all.equal()`), and by fixing `re_extracting_nhanes_data.R` itself to
+  save under the `df_hp_usa_w_final` object name directly, so a future
+  re-run (e.g. with updated raw NHANES extracts) doesn't reintroduce the same
+  mismatch. **Requires refitting** every model, since this changes the
+  likelihood input data, not just post-processing.
 - **`figures_cluster_sensitivity_analysis_sep15.R` read fit objects from the
   wrong directory.** All three `readRDS()` calls (`base_continuous_bc`,
   `RW_continuous_bc`, `RW_expanded_continuous_bc`) pointed at
