@@ -36,18 +36,21 @@
   for all three. Found while adding the effective-sample-size calculation
   below, which reads one of these same fit objects.
 - **Added overdispersion-adjusted effective sample size**, alongside the
-  existing raw `total_pop`, for the two selected models (`study_re` for the
-  binary-cohort analysis, `RW_continuous_bc` for the continuous-cohort
-  analysis). For `y ~ BetaBinomial(n, p*theta, (1-p)*theta)`, `Var(y)` is
-  inflated relative to a plain `Binomial(n, p)` by a design effect
-  `DEFF = (n + theta) / (1 + theta)`; the effective sample size is the
+  existing raw `total_pop`. For `y ~ BetaBinomial(n, p*theta, (1-p)*theta)`,
+  `Var(y)` is inflated relative to a plain `Binomial(n, p)` by a design
+  effect `DEFF = (n + theta) / (1 + theta)`; the effective sample size is the
   plain-binomial `n` giving the same precision:
   `n_eff = n*(1 + theta) / (n + theta)`, computed per row and per posterior
   draw of `theta`, then summed across rows and reported with a 95% CrI.
-  Written to `results/effective_sample_size_StudyRE.csv` and
-  `results/effective_sample_size_RWcohort.csv`. Requires the corresponding
-  model to already be fit (reads the saved `.rds`); no refit needed for this
-  calculation itself.
+  `figures_cluster_sensitivity_analysis_sep15.R` computes this for the
+  selected continuous-cohort model only (`RW_continuous_bc`), written to
+  `results/effective_sample_size_RWcohort.csv`.
+  `figures_cluster_sep4.R` computes this for every model in the binary-cohort
+  registry (not just the selected `study_re`), since `total_pop` is the same
+  across models but `theta` -- and so `eff_n` -- varies by model; written to
+  `results/effective_sample_size_ALL.csv` with one row per model. Requires
+  the corresponding model(s) to already be fit (reads the saved `.rds`); no
+  refit needed for this calculation itself.
 
 ## Unreleased (branch `fix/foi-and-denominators`)
 

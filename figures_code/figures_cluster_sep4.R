@@ -52,7 +52,8 @@ df_p_curves_obs <- data_model_filtered %>%
   filter(age > 0) %>%
   mutate(era     = factor(ifelse(birth_cohort_cat == 0, "Pre-1960", "1960+"),
                           levels = c("Pre-1960", "1960+"))) %>%
-  group_by(race_fac, era, age = round(age)) %>%
+  mutate(study_id_NHANES_indicator=ifelse(study_id=="NHANES1994"|study_id=="NHANES2000",'NHANES','OtherData'))%>%
+  group_by(race_fac, era, age = round(age),study_id_NHANES_indicator) %>%
   summarise(n_cell = sum(total, na.rm = TRUE),
             y_cell = sum(HP,    na.rm = TRUE),
             Mean   = y_cell / n_cell,
@@ -445,9 +446,9 @@ process_model <- function(model_name, cfg) {
 # combined predicted and observed prevalence plot
   df_p_plot <- df_p_hat_race_final %>% # filter(age > 0) %>%
     mutate(era = factor(era, levels = era_labels))
-
   
-  ggplot() +
+  
+ ggplot() +
   geom_ribbon(data = df_p_plot,
               aes(x = age, ymin = LB, ymax = UB,
                   fill = era, group = era),
@@ -456,8 +457,8 @@ process_model <- function(model_name, cfg) {
             aes(x = age, y = Mean, color = era, group = era),
             size = 1) +
   geom_point(data = df_p_curves_obs,
-             aes(x = age, y = Mean, color = era),
-             size = 1, alpha = 0.8, shape = 16)+
+             aes(x = age, y = Mean, color = era, shape=study_id_NHANES_indicator),
+             size = 1.5, alpha = 0.8)+ #, shape = 16
   geom_errorbar(data = df_p_curves_obs,
                 aes(x = age, ymin = LL, ymax = UL, color = era),
                 width = 1.5, alpha = 0.6, size = 0.4) +
@@ -473,8 +474,9 @@ process_model <- function(model_name, cfg) {
   ylab("Seroprevalence") +
   labs(color   = "Birth cohort era",
        fill    = "Birth cohort era") +
+  labs(shape="NHANES indicator") +
   theme_bw(base_size = 14) +
-  theme(legend.position  = "bottom",
+  theme(legend.position  = "right",
         legend.text      = element_text(size = 15),
         legend.title = element_text(size=18),
         strip.background = element_rect(fill  = "transparent",
@@ -511,9 +513,30 @@ process_model <- function(model_name, cfg) {
   max_prev <- df_p_hat_race_final %>% filter(age == fin_age) %>%
     mutate(era = factor(era, levels = era_labels))
 
+  #ggplot(max_prev, aes(x = race, y = Mean, color = race, ymin = LB, ymax = UB, # color = era
+                     #   shape = era, group = era)) + # group = era
+    #geom_pointrange(size = 1, position = position_dodge(width = 0.6)) +
+    #geom_errorbar(width = 0.5, size = 1, position = position_dodge(width = 0.6)) +
+    #scale_y_continuous(breaks = seq(0, 1, by = 0.1), limits = c(0, 1)) +
+    #scale_shape_manual(values = c("Pre-1960" = 16, "1960+" = 17)) +
+    #xlab("") + ylab("Max seroprevalence (age 90)") +
+    #labs(color = "Birth cohort era", shape = "Birth cohort era") +
+    #theme_bw(base_size = 16) +
+    #theme(legend.position    = "none",#bottom
+        #legend.spacing.x   = unit(0.1, "cm"),
+        #legend.box         = "horizontal",
+        #legend.title       = element_text(size = 14),
+        #legend.text        = element_text(size = 14),
+        #legend.key.size    = unit(1, "cm"),
+       # strip.background   = element_rect(fill = "transparent", color = "transparent"),
+  #axis.text.x=element_text(size=20,hjust=1,vjust=1,angle=45),
+  #axis.text.y=element_text(size=20),
+  #axis.title.x=element_text(size=20),
+  #axis.title.y=element_text(size=20))
   ggplot(max_prev, aes(x = race, y = Mean, color = race, ymin = LB, ymax = UB, # color = era
-                        shape = era, group = era)) + # group = era
+                        shape = era)) + # group = era
     geom_pointrange(size = 1, position = position_dodge(width = 0.6)) +
+    facet_wrap(~era)+
     geom_errorbar(width = 0.5, size = 1, position = position_dodge(width = 0.6)) +
     scale_y_continuous(breaks = seq(0, 1, by = 0.1), limits = c(0, 1)) +
     scale_shape_manual(values = c("Pre-1960" = 16, "1960+" = 17)) +
@@ -530,15 +553,17 @@ process_model <- function(model_name, cfg) {
   axis.text.x=element_text(size=20,hjust=1,vjust=1,angle=45),
   axis.text.y=element_text(size=20),
   axis.title.x=element_text(size=20),
-  axis.title.y=element_text(size=20))
+  axis.title.y=element_text(size=20),
+  strip.text.x.top =element_text(size=20))
   ggsave(paste0("./figures_sep22_2026/binary_cohort_figs/max_prev_both_eras_", tag, ".png"), width = 10, height = 8)
 
   prev_at_5 <- df_p_hat_race_final %>% filter(age == 5) %>%
     mutate(era = factor(era, levels = era_labels))
-
+    
   ggplot(prev_at_5, aes(x = race, y = Mean, color = race, ymin = LB, ymax = UB, # color = era
-                        shape = era, group = era)) + # group = era
+                        shape = era)) + # group = era
     geom_pointrange(size = 1, position = position_dodge(width = 0.6)) +
+    facet_wrap(~era)+
     geom_errorbar(width = 0.5, size = 1, position = position_dodge(width = 0.6)) +
     scale_y_continuous(breaks = seq(0, 1, by = 0.1), limits = c(0, 1)) +
     scale_shape_manual(values = c("Pre-1960" = 16, "1960+" = 17)) +
@@ -555,7 +580,8 @@ process_model <- function(model_name, cfg) {
   axis.text.x=element_text(size=20,hjust=1,vjust=1,angle=45),
   axis.text.y=element_text(size=20),
   axis.title.x=element_text(size=20),
-  axis.title.y=element_text(size=20))
+  axis.title.y=element_text(size=20),
+  strip.text.x.top =element_text(size=20))
   ggsave(paste0("./figures_sep22_2026/binary_cohort_figs/prev_at_5_both_eras_", tag, ".png"), width = 10, height = 8)
 
   ## change in max prevalence between eras, computed per posterior draw
@@ -743,7 +769,7 @@ for (model_name in names(model_configs)) {
 
 # *****************************************************************************
 # Effective sample size, adjusted for beta-binomial overdispersion (theta),
-# for the selected model only (study_re -- Appendix Section D).
+# computed for every model in model_configs (not just the selected one).
 #
 # For y ~ BetaBinomial(n, p*theta, (1-p)*theta), Var(y) is inflated relative to
 # a plain Binomial(n, p) by a design effect DEFF = (n + theta) / (1 + theta).
@@ -751,6 +777,8 @@ for (model_name in names(model_configs)) {
 # precision: n_eff = n / DEFF = n*(1 + theta) / (n + theta), computed per row
 # and per posterior draw of theta, then summed across rows -- same structure
 # as total_pop, but downweighted for between-study/subgroup overdispersion.
+# The underlying data (and so total_pop) is the same for every model; only
+# theta -- and so eff_n -- varies by model.
 # *****************************************************************************
 compute_effective_n <- function(fit_path, n_vec) {
   fit_obj <- readRDS(fit_path)
@@ -764,12 +792,16 @@ compute_effective_n <- function(fit_path, n_vec) {
   )
 }
 
-eff_n_selected <- compute_effective_n(model_configs$study_re$file, data_model_filtered$total)
-write_csv(eff_n_selected, "results/effective_sample_size_StudyRE.csv")
-cat(sprintf(
-  "Effective sample size (study_re, overdispersion-adjusted): %.0f (95%% CrI: %.0f, %.0f); raw total_pop = %.0f\n",
-  eff_n_selected$eff_n_mean, eff_n_selected$eff_n_LB, eff_n_selected$eff_n_UB, eff_n_selected$total_pop
-))
+eff_n_all <- purrr::map_dfr(names(model_configs), function(model_name) {
+  cfg    <- model_configs[[model_name]]
+  eff_n  <- compute_effective_n(cfg$file, data_model_filtered$total)
+  cat(sprintf(
+    "Effective sample size (%s, overdispersion-adjusted): %.0f (95%% CrI: %.0f, %.0f); raw total_pop = %.0f\n",
+    cfg$tag, eff_n$eff_n_mean, eff_n$eff_n_LB, eff_n$eff_n_UB, eff_n$total_pop
+  ))
+  cbind(data.frame(model = model_name, tag = cfg$tag), eff_n)
+})
+write_csv(eff_n_all, "results/effective_sample_size_ALL.csv")
 
 
 
