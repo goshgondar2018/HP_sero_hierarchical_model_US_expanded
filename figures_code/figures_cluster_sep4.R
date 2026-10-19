@@ -46,14 +46,13 @@ data_model_filtered <- data_model_complete %>%
 total_pop = sum(data_model_filtered$total)
 
 # observed prevalence data points
-## cells are pooled by COUNTS rather than by averaging subgroup prevalences.
-
 df_p_curves_obs <- data_model_filtered %>%
   filter(age > 0) %>%
   mutate(era     = factor(ifelse(birth_cohort_cat == 0, "Pre-1960", "1960+"),
                           levels = c("Pre-1960", "1960+"))) %>%
   mutate(study_id_NHANES_indicator=ifelse(study_id=="NHANES1994"|study_id=="NHANES2000",'NHANES','OtherData'))%>%
   group_by(race_fac, era, age = round(age),study_id_NHANES_indicator) %>%
+  # pool by total counts (HP and total pop) in that age & subgroup, rather than average prevalence estimates
   summarise(n_cell = sum(total, na.rm = TRUE),
             y_cell = sum(HP,    na.rm = TRUE),
             Mean   = y_cell / n_cell,
