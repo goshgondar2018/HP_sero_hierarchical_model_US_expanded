@@ -250,24 +250,24 @@ loo_configs <- list(
                 inds = inds, age = age, n_races = n_races)
   ),
   base_continuous_bc = list(
-    file = "./results_cluster/fit_base_continuous_bc.rds",
+    file = "./results_cluster_sensitivity_analysis/fit_base_continuous_bc.rds",
     args = list(structure = "linear_continuous", kappa_mode = "none",
-                has_study_re = FALSE, bc_scaled = bc_scaled,
+               has_study_re = FALSE, bc_scaled = bc_scaled,
                inds = inds, age = age, n_races = n_races)
  ),
   RW_continuous_bc = list(
-    file = "./results_cluster/fit_RW_continuous_bc.rds",
-   args = list(structure = "rw_shared", kappa_mode = "none",
+    file = "./results_cluster_sensitivity_analysis/fit_RW_continuous_bc.rds",
+  args = list(structure = "rw_shared", kappa_mode = "none",
                 has_study_re = TRUE, study_id = study_id,
-               cohort_idx = cohort_idx, n_cohorts = n_cohorts,
-                inds = inds, age = age, n_races = n_races)
+              cohort_idx = cohort_idx, n_cohorts = n_cohorts,
+               inds = inds, age = age, n_races = n_races)
   ),
   RW_expanded_continuous_bc = list(
-    file = "./results_cluster/fit_RW_expanded_continuous_bc.rds",
+    file = "./results_cluster_sensitivity_analysis/fit_RW_expanded_continuous_bc.rds",
     args = list(structure = "rw_race_dev", kappa_mode = "none",
                has_study_re = TRUE, study_id = study_id,
                cohort_idx = cohort_idx, n_cohorts = n_cohorts,
-               inds = inds, age = age, n_races = n_races)
+              inds = inds, age = age, n_races = n_races)
   )
 )
 
