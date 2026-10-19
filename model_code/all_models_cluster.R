@@ -31,10 +31,7 @@ dir.create(fig_dir, showWarnings = FALSE, recursive = TRUE)
 
 # *****************************************************************************
 #### Prior parameterisation ####
-#
-# Target a ~95% prior interval of roughly (0.2, 5)
-#  KAPPA_TAU = 1/(ln(5)/1.96)^2 = 1.483, rounded to 1.5
-#   -> prior SD on log(kappa) = 0.816, kappa 95% prior interval ~(0.20, 4.95)
+
 KAPPA_TAU <- 1.5
 # *****************************************************************************
 
