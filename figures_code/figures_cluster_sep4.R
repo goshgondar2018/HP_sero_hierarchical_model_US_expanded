@@ -237,9 +237,7 @@ summarize_max_prev_IOD <- function(mat, era_label, referent = "NHW") {
   )
 }
 
-# Change in maximum prevalence between eras, computed PER DRAW. The previous
-# inline version differenced the already-summarised Mean/LB/UB columns, which
-# does not give the posterior mean or a valid interval for the change.
+# change in maximum prevalence between eras, computed PER DRAW
 summarize_prev_change <- function(mat_pre, mat_post) {
   mat_pre  <- as.matrix(mat_pre);  rownames(mat_pre)  <- race_labels
   mat_post <- as.matrix(mat_post); rownames(mat_post) <- race_labels
@@ -447,7 +445,6 @@ process_model <- function(model_name, cfg) {
   df_p_plot <- df_p_hat_race_final %>% # filter(age > 0) %>%
     mutate(era = factor(era, levels = era_labels))
   
-  
  ggplot() +
   geom_ribbon(data = df_p_plot,
               aes(x = age, ymin = LB, ymax = UB,
@@ -533,6 +530,7 @@ process_model <- function(model_name, cfg) {
   #axis.text.y=element_text(size=20),
   #axis.title.x=element_text(size=20),
   #axis.title.y=element_text(size=20))
+  
   ggplot(max_prev, aes(x = race, y = Mean, color = race, ymin = LB, ymax = UB, # color = era
                         shape = era)) + # group = era
     geom_pointrange(size = 1, position = position_dodge(width = 0.6)) +
