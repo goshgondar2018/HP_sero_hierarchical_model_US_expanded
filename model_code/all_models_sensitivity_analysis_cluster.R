@@ -33,17 +33,6 @@ dir.create(fig_dir, showWarnings = FALSE, recursive = TRUE)
 
 # *****************************************************************************
 #### Prior parameterisation ####
-
-# Reverted to the tight/originally-coded value: par_alpha0[j]/mub[1] and
-# rw_alpha_pop's own level are only identified through their SUM in the
-# likelihood (logit(alpha[i]) = par_alpha0[inds[i]] + rw_alpha_pop[cohort_idx[i]]
-# + study_re[...]), so a diffuse prior on rw_alpha_pop[1] lets MCMC wander
-# along that flat ridge -- this is what trace plots of RW_continuous_bc showed
-# (par_alpha0 and rw_alpha_pop moving together, in lockstep, across every
-# race/cohort). A tight prior anchors one end of the ridge and constrains that
-# wandering, even though it doesn't remove the underlying non-identifiability.
-#   RW_INIT_TAU = 25.00  -> SD 0.20   (tight; used below)
-#   RW_INIT_TAU = 0.04   -> SD 5.00   (diffuse; Appendix reading, reverted)
 RW_INIT_TAU <- 25.00
 # *****************************************************************************
 
@@ -116,6 +105,10 @@ rw_data <- c(base_data_continuous, list(
   cohort_idx = cohort_idx, n_cohorts = n_cohorts,
   rw_init_tau = RW_INIT_TAU
 ))
+
+## observed birth-cohort years; element t is the year for rw_*[cohort_idx == t]
+cohort_years <- sort(unique(round(data_model_filtered$birth_cohort)))
+#saveRDS(cohort_years, file.path(out_dir, "cohort_years.rds"))
 
 
 # *****************************************************************************
@@ -350,8 +343,6 @@ MODEL_LIST <- list(
                 "sd_study",
                "theta", "deviance")
   )
-
-  
 )
 
 # *****************************************************************************

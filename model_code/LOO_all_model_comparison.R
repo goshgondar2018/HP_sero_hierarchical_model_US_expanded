@@ -80,6 +80,10 @@ study_id     <- as.numeric(as.factor(study_id_raw))
 n_studies    <- length(unique(study_id))
 cohort_idx <- as.numeric(as.factor(round(data_model_filtered$birth_cohort)))
 n_cohorts <- length(unique(cohort_idx))
+# full-year indexing used by the RW_*fullyear* models (one node per calendar year)
+cohort_year     <- round(data_model_filtered$birth_cohort)
+cohort_idx_full <- cohort_year - min(cohort_year) + 1
+n_cohorts_full  <- max(cohort_year) - min(cohort_year) + 1
 
 # ******************************************************************************************
 #### Compute p[i] matrix [n_iter x N] for a given model structure/kappa/study_re combo ####
@@ -268,6 +272,20 @@ loo_configs <- list(
                has_study_re = TRUE, study_id = study_id,
                cohort_idx = cohort_idx, n_cohorts = n_cohorts,
               inds = inds, age = age, n_races = n_races)
+  ),
+  RW_fullyear_continuous_bc = list(
+    file = "./results_cluster_sensitivity_analysis/fit_RW_fullyear_continuous_bc.rds",
+    args = list(structure = "rw_shared", kappa_mode = "none",
+                has_study_re = TRUE, study_id = study_id,
+                cohort_idx = cohort_idx_full, n_cohorts = n_cohorts_full,
+                inds = inds, age = age, n_races = n_races)
+  ),
+  RW_expanded_fullyear_continuous_bc = list(
+    file = "./results_cluster_sensitivity_analysis/fit_RW_expanded_fullyear_continuous_bc.rds",
+    args = list(structure = "rw_race_dev", kappa_mode = "none",
+                has_study_re = TRUE, study_id = study_id,
+                cohort_idx = cohort_idx_full, n_cohorts = n_cohorts_full,
+                inds = inds, age = age, n_races = n_races)
   )
 )
 
@@ -303,7 +321,3 @@ comparison_df <- as.data.frame(comparison) %>%
 
 write_csv(comparison_df, "results/loo_comparison_ALL.csv")
 
-fit_obj <- readRDS("./results_cluster/fit_study_re.rds")
-mat_all <- as.matrix(fit_obj$mcmc_all)
-study_re_cols <- grep("^study_re\\[", colnames(mat_all))
-cat("n_studies (in saved fit):", length(study_re_cols), "\n")

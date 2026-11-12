@@ -60,9 +60,28 @@ race_short_labels <- c("H", "AIAN", "NHA", "NHB", "NHW")
 
 ref_ages <- c(5, 10, fin_age)
 
+# RW cohort indexing for MODEL 2 and MODEL 3:
+#   "observed" = one RW node per observed birth year (fit_RW_*continuous_bc)
+#   "fullyear" = one RW node per calendar year, min to max observed cohort
+#                (fit_RW_*fullyear_continuous_bc); years with no data are latent
+# Sets which fits are read, the cohort lookup, and a suffix on every RW output file.
+RW_INDEXING <- "fullyear"
+stopifnot(RW_INDEXING %in% c("observed", "fullyear"))
+rw_fit_tag <- if (RW_INDEXING == "fullyear") "fullyear_" else ""
+rw_out_tag <- if (RW_INDEXING == "fullyear") "_fullyear" else ""
+
 # *****************************************************************************
 #### Shared helper functions ####
 # *****************************************************************************
+
+# maps RW node index -> birth cohort year, matching the indexing in
+# all_models_sensitivity_analysis_cluster.R; observed = year has data
+make_cohort_lookup <- function() {
+  obs_years <- sort(unique(round(data_model_filtered$birth_cohort)))
+  years <- if (RW_INDEXING == "fullyear") seq(min(obs_years), max(obs_years)) else obs_years
+  data.frame(cohort_idx = seq_along(years), birth_cohort = years,
+             observed = years %in% obs_years)
+}
 
 get_vec <- function(mat_all, base_name, idx) {
   mat_all[, paste0(base_name, "[", idx, "]")]
@@ -217,9 +236,10 @@ generate_traceplot_function <- function(draws, labels, ncol_facet = 1, n_chains 
     theme_minimal() +
     labs(x = "Iteration", y = "Estimate") +
     theme(legend.position = "bottom",
-          axis.text.x = element_text(size = 12), axis.text.y = element_text(size = 12),
-          axis.title.x = element_text(size = 16), axis.title.y = element_text(size = 16),
-          strip.text = element_text(size = 10))
+          axis.text.x = element_text(size = 15), axis.text.y = element_text(size = 15),
+          axis.title.x = element_text(size = 20), axis.title.y = element_text(size = 20),
+          strip.text = element_text(size = 20),
+        legend.text=element_text(size=20), legend.title=element_text(size=20))
 }
 
 generate_densplot_function <- function(draws, labels, ncol_facet = 1) {
@@ -238,9 +258,9 @@ generate_densplot_function <- function(draws, labels, ncol_facet = 1) {
     theme_bw() +
     labs(x = "Estimate", y = "Density") +
     theme(legend.position = "none",
-          axis.text.x = element_text(size = 12), axis.text.y = element_text(size = 12),
-          axis.title.x = element_text(size = 16), axis.title.y = element_text(size = 16),
-          strip.text = element_text(size = 10))
+           axis.text.x = element_text(size = 15), axis.text.y = element_text(size = 15),
+          axis.title.x = element_text(size = 20), axis.title.y = element_text(size = 20),
+          strip.text = element_text(size = 20))
 }
 
 make_max_prev_by_race_cohort <- function(df_p_hat_race_final, ref_age, filter_years = NULL) {
@@ -338,11 +358,15 @@ ggplot(df_p_curves_subset,
 ggsave("./figures_sep22_2026/continuous_cohort_figs/predicted_prev_by_cohort_year_BaseContinuous.png", width = 12, height = 8)
 
 plot_max_prev_base <- function(df, ref_age) {
+  df <- df%>%
+    mutate(Mean=Mean*100)%>%
+    mutate(LB=LB*100)%>%
+    mutate(UB=UB*100)
   ggplot(df,
          aes(x = race, y = Mean, color = factor(birth_cohort),
              ymin = LB, ymax = UB, group = factor(birth_cohort))) +
     geom_pointrange(position = position_dodge(width = 0.6), size = 0.7) +
-    scale_y_continuous(breaks = seq(0, 1, by = 0.1), limits = c(0, 1)) +
+    scale_y_continuous(breaks = seq(0, 100, by = 10), limits = c(0, 10)) +
     labs(x = "", y = paste0("Seroprevalence (age ", ref_age, ")"), color = "Birth cohort\nyear") +
     theme_bw(base_size = 16) +
     theme(axis.text.x = element_text(angle = 45, hjust = 1), legend.position = "none")
@@ -472,20 +496,13 @@ save_psrf_table(cbind.data.frame(parameter = gelman_univariate_PSRF$param,
 # *****************************************************************************************************
 # *****************************************************************************************************
 
-cluster_fit <- readRDS("./results_cluster_sensitivity_analysis/fit_RW_continuous_bc.rds")
+cluster_fit <- readRDS(paste0("./results_cluster_sensitivity_analysis/fit_RW_", rw_fit_tag, "continuous_bc.rds"))
 mcmc_all    <- cluster_fit$mcmc_all
 mat_all     <- as.matrix(mcmc_all)
 
 n_iter     <- nrow(mat_all)
-cohort_idx <- as.numeric(as.factor(round(data_model_filtered$birth_cohort)))
-n_cohorts  <- length(unique(cohort_idx))
-
-cohort_lookup <- data.frame(
-  cohort_idx   = cohort_idx,
-  birth_cohort = round(data_model_filtered$birth_cohort)
-) %>%
-  distinct() %>%
-  arrange(cohort_idx)
+cohort_lookup <- make_cohort_lookup()
+n_cohorts     <- nrow(cohort_lookup)
 
 par_alpha0_draws <- t(sapply(1:n_races, function(j) get_vec(mat_all, "par_alpha0", j)))
 par_gamma0_draws <- t(sapply(1:n_races, function(j) get_vec(mat_all, "par_gamma0", j)))
@@ -509,7 +526,7 @@ for (r in race_index) {
   dt_foi  <- df_hp_hat_race_final %>% filter(race == race_labels[r])
   save(dt_prev, dt_foi,
        file = paste0("results/rw_cohort_dt_prev_hat_race_", r, "_",
-                      race_short_labels[r], "_RWcohort.Rdata"))
+                      race_short_labels[r], paste0("_RWcohort", rw_out_tag, ".Rdata")))
 }
 
 ## FOI plot
@@ -530,7 +547,7 @@ ggplot(df_foi_curves_subset,
         legend.text = element_text(size = 20, hjust = 1, vjust = 1, angle = 45),
         legend.title = element_text(size = 20), legend.position = "bottom")
 
-ggsave("./figures_sep22_2026/continuous_cohort_figs/predicted_foi_by_cohort_year_RWcohort.png",
+ggsave(paste0("./figures_sep22_2026/continuous_cohort_figs/predicted_foi_by_cohort_year_RWcohort", rw_out_tag, ".png"),
        width = 12, height = 8)
 
 ## prevalence plot
@@ -546,7 +563,7 @@ ggplot(df_p_curves_subset,
   theme_bw(base_size = 13) +
   theme(strip.text = element_text(face = "bold",size=20))
 
-ggsave("./figures_sep22_2026/continuous_cohort_figs/predicted_prev_by_cohort_year_RWcohort.png",
+ggsave(paste0("./figures_sep22_2026/continuous_cohort_figs/predicted_prev_by_cohort_year_RWcohort", rw_out_tag, ".png"),
        width = 12, height = 8)
 
 ## max prevalence at multiple ages
@@ -555,13 +572,24 @@ max_prev_by_race_cohort_list <- lapply(ref_ages, function(a)
 names(max_prev_by_race_cohort_list) <- paste0("age_", ref_ages)
 
 plot_max_prev_rw <- function(df, ref_age) {
+  df <- df%>%
+    mutate(Mean=Mean*100)%>%
+    mutate(LB=LB*100)%>%
+    mutate(UB=UB*100)
+   df <- df%>%
+     mutate(race=ifelse(race=="NH American Indian","AI/AN",
+    ifelse(race=="NH Asian","API",
+  ifelse(race=="NH Black","NHB",
+  ifelse(race=="NH White","NHW",
+  "Hispanic")))))
+
   ggplot(df,
          aes(x = race, y = Mean, color = birth_cohort,
              ymin = LB, ymax = UB, group = birth_cohort)) +
     geom_pointrange(position = position_dodge(width = 0.6), size = 0.5) +
     scale_color_viridis_c(name = "Birth cohort\nyear") +
-    scale_y_continuous(breaks = seq(0, 1, by = 0.1), limits = c(0, 1)) +
-    labs(x = "", y = paste0("Seroprevalence (age ", ref_age, ")"),
+    scale_y_continuous(breaks = seq(0, 100, by = 10), limits = c(0, 100)) +
+    labs(x = "", y = paste0("Seroprevalence (age ", ref_age, ") (%)"),
          color = "Birth cohort\nyear") +
     theme_bw(base_size = 16) +
     theme(axis.text.x = element_text(size = 20, angle = 45, hjust = 1),
@@ -577,16 +605,16 @@ for (ref_age in ref_ages) {
   p_this  <- plot_max_prev_rw(df_this, ref_age)
 
   out_file <- if (ref_age == fin_age) {
-    "./figures_sep22_2026/continuous_cohort_figs/max_prev_by_race_cohort_RWcohort.png"
+    paste0("./figures_sep22_2026/continuous_cohort_figs/max_prev_by_race_cohort_RWcohort", rw_out_tag, ".png")
   } else {
-    paste0("./figures_sep22_2026/continuous_cohort_figs/max_prev_by_race_cohort_age", ref_age, "_RWcohort.png")
+    paste0("./figures_sep22_2026/continuous_cohort_figs/max_prev_by_race_cohort_age", ref_age, "_RWcohort", rw_out_tag, ".png")
   }
   ggsave(out_file, p_this, width = 11, height = 8)
 }
 
 max_prev_by_race_cohort_all_ages <- bind_rows(max_prev_by_race_cohort_list)
 save(max_prev_by_race_cohort_all_ages,
-     file = "results/rw_cohort_max_prev_age5_10_90.Rdata")
+     file = paste0("results/rw_cohort_max_prev_age5_10_90", rw_out_tag, ".Rdata"))
 
 ## median age of infection
 gamma_fn_rw <- function(r, t, iter) exp(par_gamma0_draws[r, iter] + rw_gamma_pop_draws[t, iter])
@@ -596,15 +624,19 @@ df_aoi_rw <- run_aoi(gamma_fn_rw, cohort_lookup, "cohort_idx", race_index, race_
 for (r in race_index) {
   dt_aoi <- df_aoi_rw %>% filter(race == race_labels[r])
   save(dt_aoi, file = paste0("results/rw_cohort_dt_aoi_race_", r, "_",
-                              race_short_labels[r], "_RWcohort.Rdata"))
+                              race_short_labels[r], paste0("_RWcohort", rw_out_tag, ".Rdata")))
 }
 
-write_csv(df_aoi_rw, "results/median_age_inf_RW_cohort.csv")
+write_csv(df_aoi_rw, paste0("results/median_age_inf_RW_cohort", rw_out_tag, ".csv"))
+
+order_race_labels_aoi_rw=c("API", "NHW", "Hispanic", "NHB", "AI/AN") # ordered by magnitude of latest estimates, to correspond to binary cohort figures 
+df_aoi_rw$race<-factor(df_aoi_rw$race, levels = order_race_labels_aoi_rw)
 
 ggplot(df_aoi_rw,
-       aes(x = reorder(race, Mean, decreasing = TRUE), y = Mean,
+       aes(x = race, y = Mean, #reorder(race, Mean, decreasing = TRUE)
            ymin = LB, ymax = UB,
            group = birth_cohort, color = birth_cohort)) +
+  geom_point()+
   geom_pointrange(size = 0.3, position = position_dodge(width = 0.8)) +
   geom_errorbar(width = 0.3, linewidth = 0.5, position = position_dodge(width = 0.8)) +
   scale_color_viridis_c(name = "Birth cohort\nyear") +
@@ -618,7 +650,7 @@ ggplot(df_aoi_rw,
   ylab("Median age of infection (years)") +
   labs(color = "Birth cohort year")
 
-ggsave("./figures_sep22_2026/continuous_cohort_figs/median_age_inf_RW_cohort.png")
+ggsave(paste0("./figures_sep22_2026/continuous_cohort_figs/median_age_inf_RW_cohort", rw_out_tag, ".png"))
 
 ## convergence plots/tables
 m_alpha0 <- mat_all[, paste0("par_alpha0[", 1:n_races, "]"), drop = FALSE]
@@ -635,22 +667,22 @@ alpha_pop_labels <- paste0("alpha_pop, cohort=", ref_cohort_years)
 gamma_pop_labels <- paste0("gamma_pop, cohort=", ref_cohort_years)
 
 generate_traceplot_function(m_alpha0, alpha0_labels, ncol_facet = 1)
-ggsave("./figures_sep22_2026/continuous_cohort_figs/alpha0_traceplot_RWcohort.png", width = 12, height = 8)
+ggsave(paste0("./figures_sep22_2026/continuous_cohort_figs/alpha0_traceplot_RWcohort", rw_out_tag, ".png"), width = 12, height = 8)
 generate_traceplot_function(m_gamma0, gamma0_labels, ncol_facet = 1)
-ggsave("./figures_sep22_2026/continuous_cohort_figs/gamma0_traceplot_RWcohort.png", width = 12, height = 8)
+ggsave(paste0("./figures_sep22_2026/continuous_cohort_figs/gamma0_traceplot_RWcohort", rw_out_tag, ".png"), width = 12, height = 8)
 generate_traceplot_function(m_alpha_pop, alpha_pop_labels, ncol_facet = 2)
-ggsave("./figures_sep22_2026/continuous_cohort_figs/alpha_pop_traceplot_RWcohort.png", width = 14, height = 10)
+ggsave(paste0("./figures_sep22_2026/continuous_cohort_figs/alpha_pop_traceplot_RWcohort", rw_out_tag, ".png"), width = 14, height = 10)
 generate_traceplot_function(m_gamma_pop, gamma_pop_labels, ncol_facet = 2)
-ggsave("./figures_sep22_2026/continuous_cohort_figs/gamma_pop_traceplot_RWcohort.png", width = 14, height = 10)
+ggsave(paste0("./figures_sep22_2026/continuous_cohort_figs/gamma_pop_traceplot_RWcohort", rw_out_tag, ".png"), width = 14, height = 10)
 
 generate_densplot_function(m_alpha0, alpha0_labels, ncol_facet = 1)
-ggsave("./figures_sep22_2026/continuous_cohort_figs/alpha0_densplot_RWcohort.png", width = 12, height = 8)
+ggsave(paste0("./figures_sep22_2026/continuous_cohort_figs/alpha0_densplot_RWcohort", rw_out_tag, ".png"), width = 12, height = 8)
 generate_densplot_function(m_gamma0, gamma0_labels, ncol_facet = 1)
-ggsave("./figures_sep22_2026/continuous_cohort_figs/gamma0_densplot_RWcohort.png", width = 12, height = 8)
+ggsave(paste0("./figures_sep22_2026/continuous_cohort_figs/gamma0_densplot_RWcohort", rw_out_tag, ".png"), width = 12, height = 8)
 generate_densplot_function(m_alpha_pop, alpha_pop_labels, ncol_facet = 2)
-ggsave("./figures_sep22_2026/continuous_cohort_figs/alpha_pop_densplot_RWcohort.png", width = 14, height = 10)
+ggsave(paste0("./figures_sep22_2026/continuous_cohort_figs/alpha_pop_densplot_RWcohort", rw_out_tag, ".png"), width = 14, height = 10)
 generate_densplot_function(m_gamma_pop, gamma_pop_labels, ncol_facet = 2)
-ggsave("./figures_sep22_2026/continuous_cohort_figs/gamma_pop_densplot_RWcohort.png", width = 14, height = 10)
+ggsave(paste0("./figures_sep22_2026/continuous_cohort_figs/gamma_pop_densplot_RWcohort", rw_out_tag, ".png"), width = 14, height = 10)
 
 gelman_conv <- cluster_fit$gelman_conv
 gelman_multivariate_PSRF <- as.data.frame(gelman_conv$psrf[, 1])
@@ -660,7 +692,7 @@ gelman_multivariate_PSRF$param <- c("mu_alpha0", "mu_gamma0",
                                      "sd_rw_gamma_pop", "sd_study")
 save_psrf_table(cbind.data.frame(parameter = gelman_multivariate_PSRF$param,
                                  PSRF = gelman_multivariate_PSRF$PSRF),
-                "./figures_sep22_2026/continuous_cohort_figs/multivariate_PSRF_RW_cohort.png")
+                paste0("./figures_sep22_2026/continuous_cohort_figs/multivariate_PSRF_RW_cohort", rw_out_tag, ".png"))
 
 gelman_par <- cluster_fit$gelman_par
 gelman_univariate_PSRF <- as.data.frame(gelman_par$psrf[, 1])
@@ -671,12 +703,12 @@ gelman_univariate_PSRF$param <- c("log_alpha0_H", "log_alpha0_AIAN", "log_alpha0
                                    "log_gamma0_NHB", "log_gamma0_NHW")
 save_psrf_table(cbind.data.frame(parameter = gelman_univariate_PSRF$param,
                                  PSRF = gelman_univariate_PSRF$PSRF),
-                "./figures_sep22_2026/continuous_cohort_figs/univariate_PSRFF_RW_cohort.png")
+                paste0("./figures_sep22_2026/continuous_cohort_figs/univariate_PSRFF_RW_cohort", rw_out_tag, ".png"))
 
 
-eff_n_selected <- compute_effective_n("./results_cluster_sensitivity_analysis/fit_RW_continuous_bc.rds",
+eff_n_selected <- compute_effective_n(paste0("./results_cluster_sensitivity_analysis/fit_RW_", rw_fit_tag, "continuous_bc.rds"),
                                        data_model_filtered$total)
-write_csv(eff_n_selected, "results/effective_sample_size_RWcohort.csv")
+write_csv(eff_n_selected, paste0("results/effective_sample_size_RWcohort", rw_out_tag, ".csv"))
 cat(sprintf(
   "Effective sample size (RW_continuous_bc, overdispersion-adjusted): %.0f (95%% CrI: %.0f, %.0f); raw total_pop = %.0f\n",
   eff_n_selected$eff_n_mean, eff_n_selected$eff_n_LB, eff_n_selected$eff_n_UB, eff_n_selected$total_pop
@@ -688,20 +720,13 @@ cat(sprintf(
 # *****************************************************************************************************
 # *****************************************************************************************************
 
-cluster_fit <- readRDS("./results_cluster_sensitivity_analysis/fit_RW_expanded_continuous_bc.rds")
+cluster_fit <- readRDS(paste0("./results_cluster_sensitivity_analysis/fit_RW_expanded_", rw_fit_tag, "continuous_bc.rds"))
 mcmc_all    <- cluster_fit$mcmc_all
 mat_all     <- as.matrix(mcmc_all)
 
 n_iter     <- nrow(mat_all)
-cohort_idx <- as.numeric(as.factor(round(data_model_filtered$birth_cohort)))
-n_cohorts  <- length(unique(cohort_idx))
-
-cohort_lookup <- data.frame(
-  cohort_idx   = cohort_idx,
-  birth_cohort = round(data_model_filtered$birth_cohort)
-) %>%
-  distinct() %>%
-  arrange(cohort_idx)
+cohort_lookup <- make_cohort_lookup()
+n_cohorts     <- nrow(cohort_lookup)
 
 # a readable subset of birth cohort years for the by-cohort comparison plots below
 # (avoids overplotting when there are many distinct cohort years)
@@ -744,7 +769,7 @@ for (r in race_index) {
   dt_foi  <- df_hp_hat_race_final %>% filter(race == race_labels[r])
   save(dt_prev, dt_foi,
        file = paste0("results/rw_cohort_dt_prev_hat_race_", r, "_",
-                      race_short_labels[r], "_RWcohort_expanded.Rdata"))
+                      race_short_labels[r], paste0("_RWcohort_expanded", rw_out_tag, ".Rdata")))
 }
 
 ## cohort trajectory figure (rw_alpha / rw_gamma by year, with race deviations)
@@ -765,6 +790,9 @@ rw_full_summary <- expand_grid(race_idx = race_index, cohort_idx = 1:n_cohorts) 
 p_rw_alpha <- ggplot(rw_full_summary, aes(x = birth_cohort, y = alpha_mean, color = race, fill = race)) +
   geom_ribbon(aes(ymin = alpha_lo, ymax = alpha_hi), alpha = 0.15, color = NA) +
   geom_line(linewidth = 1) +
+  # ticks mark birth years with data; years between them are RW-interpolated
+  geom_rug(data = filter(cohort_lookup, observed), aes(x = birth_cohort),
+           inherit.aes = FALSE, sides = "b", alpha = 0.6) +
   labs(x = "Birth cohort year", y = "Cohort effect on alpha (logit scale)",
        title = "Estimated cohort trajectory: max-prevalence (alpha) component, by race") +
   theme_bw(base_size = 14) +
@@ -773,13 +801,16 @@ p_rw_alpha <- ggplot(rw_full_summary, aes(x = birth_cohort, y = alpha_mean, colo
 p_rw_gamma <- ggplot(rw_full_summary, aes(x = birth_cohort, y = gamma_mean, color = race, fill = race)) +
   geom_ribbon(aes(ymin = gamma_lo, ymax = gamma_hi), alpha = 0.15, color = NA) +
   geom_line(linewidth = 1) +
+  # ticks mark birth years with data; years between them are RW-interpolated
+  geom_rug(data = filter(cohort_lookup, observed), aes(x = birth_cohort),
+           inherit.aes = FALSE, sides = "b", alpha = 0.6) +
   labs(x = "Birth cohort year", y = "Cohort effect on gamma (log scale)",
        title = "Estimated cohort trajectory: rate (gamma) component, by race") +
   theme_bw(base_size = 14) +
   theme(legend.position = "bottom")
 
-ggsave("./figures_sep22_2026/continuous_cohort_figs/rw_alpha_cohort_trajectory.png", p_rw_alpha, width = 10, height = 6)
-ggsave("./figures_sep22_2026/continuous_cohort_figs/rw_gamma_cohort_trajectory.png", p_rw_gamma, width = 10, height = 6)
+ggsave(paste0("./figures_sep22_2026/continuous_cohort_figs/rw_alpha_cohort_trajectory", rw_out_tag, ".png"), p_rw_alpha, width = 10, height = 6)
+ggsave(paste0("./figures_sep22_2026/continuous_cohort_figs/rw_gamma_cohort_trajectory", rw_out_tag, ".png"), p_rw_gamma, width = 10, height = 6)
 
 df_foi_curves_subset <- df_hp_hat_race_final %>%
   filter( age > 0, Mean < 1)
@@ -794,7 +825,7 @@ ggplot(df_foi_curves_subset,
   theme_bw(base_size = 13) +
   theme(strip.text = element_text(face = "bold",size=20))
 
-ggsave("./figures_sep22_2026/continuous_cohort_figs/predicted_foi_by_cohort_year_RWcohort_expanded.png", width = 12, height = 8)
+ggsave(paste0("./figures_sep22_2026/continuous_cohort_figs/predicted_foi_by_cohort_year_RWcohort_expanded", rw_out_tag, ".png"), width = 12, height = 8)
 
 df_p_curves_subset <- df_p_hat_race_final %>% filter(age > 0)
 ggplot(df_p_curves_subset,
@@ -808,7 +839,7 @@ ggplot(df_p_curves_subset,
   theme_bw(base_size = 13) +
   theme(strip.text = element_text(face = "bold",size=20))
 
-ggsave("./figures_sep22_2026/continuous_cohort_figs/predicted_prev_by_cohort_year_RWcohort_expanded.png", width = 12, height = 8)
+ggsave(paste0("./figures_sep22_2026/continuous_cohort_figs/predicted_prev_by_cohort_year_RWcohort_expanded", rw_out_tag, ".png"), width = 12, height = 8)
 
 
 max_prev_by_race_cohort <- df_p_hat_race_final %>%
@@ -818,20 +849,24 @@ ggplot(max_prev_by_race_cohort,
        aes(x = race, y = Mean, color = factor(birth_cohort),
            ymin = LB, ymax = UB, group = factor(birth_cohort))) +
   geom_pointrange(position = position_dodge(width = 0.6), size = 0.7) +
-  scale_y_continuous(breaks = seq(0, 1, by = 0.1), limits = c(0, 1)) +
+  scale_y_continuous(breaks = seq(0, 100, by = 10), limits = c(0, 100)) +
   labs(x = "", y = paste0("Max seroprevalence (age ", fin_age, ")"),
        color = "Birth cohort\nyear") +
   theme_bw(base_size = 16) +
   theme(axis.text.x = element_text(angle = 45, hjust = 1), legend.position = "none")
 
-ggsave("./figures_sep22_2026/continuous_cohort_figs/max_prev_by_race_cohort_RWcohort_expanded.png", width = 11, height = 8)
+ggsave(paste0("./figures_sep22_2026/continuous_cohort_figs/max_prev_by_race_cohort_RWcohort_expanded", rw_out_tag, ".png"), width = 11, height = 8)
 
 plot_max_prev_rw_exp <- function(df, ref_age) {
+  df <- df%>%
+    mutate(Mean=Mean*100)%>%
+    mutate(LB=LB*100)%>%
+    mutate(UB=UB*100)
   ggplot(df,
          aes(x = race, y = Mean, color = factor(birth_cohort),
              ymin = LB, ymax = UB, group = factor(birth_cohort))) +
     geom_pointrange(position = position_dodge(width = 0.6), size = 0.7) +
-    scale_y_continuous(breaks = seq(0, 1, by = 0.1), limits = c(0, 1)) +
+    scale_y_continuous(breaks = seq(0,100, by = 10), limits = c(0, 100)) +
     labs(x = "", y = paste0("Seroprevalence (age ", ref_age, ")"),
          color = "Birth cohort\nyear") +
     theme_bw(base_size = 16) +
@@ -848,16 +883,16 @@ for (ref_age in ref_ages) {
   p_this  <- plot_max_prev_rw_exp(df_this, ref_age)
 
   out_file <- if (ref_age == fin_age) {
-    "./figures_sep22_2026/continuous_cohort_figs/max_prev_by_race_cohort_RWcohort_expanded.png"
+    paste0("./figures_sep22_2026/continuous_cohort_figs/max_prev_by_race_cohort_RWcohort_expanded", rw_out_tag, ".png")
   } else {
-    paste0("./figures_sep22_2026/continuous_cohort_figs//max_prev_by_race_cohort_age", ref_age, "_RWcohort_expanded.png")
+    paste0("./figures_sep22_2026/continuous_cohort_figs//max_prev_by_race_cohort_age", ref_age, "_RWcohort_expanded", rw_out_tag, ".png")
   }
   ggsave(out_file, p_this, width = 11, height = 8)
 }
 
 max_prev_by_race_cohort_all_ages <- bind_rows(max_prev_by_race_cohort_list)
 save(max_prev_by_race_cohort_all_ages,
-     file = "results/rw_cohort_expanded_max_prev_age5_10_90.Rdata")
+     file = paste0("results/rw_cohort_expanded_max_prev_age5_10_90", rw_out_tag, ".Rdata"))
 
 ## median age of infection
 gamma_fn_rw_exp <- function(r, t, iter) {
@@ -868,10 +903,10 @@ df_aoi_final <- run_aoi(gamma_fn_rw_exp, cohort_lookup, "cohort_idx", race_index
 for (r in race_index) {
   dt_aoi <- df_aoi_final %>% filter(race == race_labels[r])
   save(dt_aoi, file = paste0("results/rw_cohort_dt_aoi_race_", r, "_",
-                              race_short_labels[r], "_RWcohort_expanded.Rdata"))
+                              race_short_labels[r], paste0("_RWcohort_expanded", rw_out_tag, ".Rdata")))
 }
 
-save(df_aoi_final, file = "results/rw_cohort_expanded_df_aoi_all.Rdata")
+save(df_aoi_final, file = paste0("results/rw_cohort_expanded_df_aoi_all", rw_out_tag, ".Rdata"))
 
 aoi_by_race_cohort <- df_aoi_final %>%
   filter(Mean < 100)
@@ -885,7 +920,7 @@ ggplot(aoi_by_race_cohort,
   theme_bw(base_size = 16) +
   theme(axis.text.x = element_text(angle = 45, hjust = 1), legend.position = "bottom")
 
-ggsave("./figures_sep22_2026/continuous_cohort_figs/median_age_infection_by_race_cohort_RWcohort_expanded.png", width = 11, height = 8)
+ggsave(paste0("./figures_sep22_2026/continuous_cohort_figs/median_age_infection_by_race_cohort_RWcohort_expanded", rw_out_tag, ".png"), width = 11, height = 8)
 
 ## key parameter summary
 param_summary <- tibble(
@@ -895,7 +930,7 @@ param_summary <- tibble(
   UB   = c(quantile(sd_rw_alpha_draws, 0.975), quantile(sd_rw_gamma_draws, 0.975), quantile(theta_draws, 0.975))
 )
 print(param_summary)
-write_csv(param_summary, "results/rw_cohort_key_param_summary.csv")
+write_csv(param_summary, paste0("results/rw_cohort_key_param_summary", rw_out_tag, ".csv"))
 
 ## convergence plots/tables
 m_alpha0 <- mat_all[, paste0("par_alpha0[", 1:n_races, "]"), drop = FALSE]
@@ -904,13 +939,13 @@ alpha0_labels <- paste0("alpha intercept ", race_labels)
 gamma0_labels <- paste0("gamma intercept ", race_labels)
 
 generate_traceplot_function(m_alpha0, alpha0_labels, ncol_facet = 1)
-ggsave("./figures_sep22_2026/continuous_cohort_figs/alpha0_traceplot_RWcohort_expanded.png", width = 12, height = 8)
+ggsave(paste0("./figures_sep22_2026/continuous_cohort_figs/alpha0_traceplot_RWcohort_expanded", rw_out_tag, ".png"), width = 12, height = 8)
 generate_traceplot_function(m_gamma0, gamma0_labels, ncol_facet = 1)
-ggsave("./figures_sep22_2026/continuous_cohort_figs/gamma0_traceplot_RWcohort_expanded.png", width = 12, height = 8)
+ggsave(paste0("./figures_sep22_2026/continuous_cohort_figs/gamma0_traceplot_RWcohort_expanded", rw_out_tag, ".png"), width = 12, height = 8)
 generate_densplot_function(m_alpha0, alpha0_labels, ncol_facet = 1)
-ggsave("./figures_sep22_2026/continuous_cohort_figs/alpha0_densplot_RWcohort_expanded.png", width = 12, height = 8)
+ggsave(paste0("./figures_sep22_2026/continuous_cohort_figs/alpha0_densplot_RWcohort_expanded", rw_out_tag, ".png"), width = 12, height = 8)
 generate_densplot_function(m_gamma0, gamma0_labels, ncol_facet = 1)
-ggsave("./figures_sep22_2026/continuous_cohort_figs/gamma0_densplot_RWcohort_expanded.png", width = 12, height = 8)
+ggsave(paste0("./figures_sep22_2026/continuous_cohort_figs/gamma0_densplot_RWcohort_expanded", rw_out_tag, ".png"), width = 12, height = 8)
 
 ref_cohort_bins  <- round(seq(1, n_cohorts, length.out = 6))
 ref_cohort_years <- cohort_lookup$birth_cohort[ref_cohort_bins]
@@ -921,13 +956,13 @@ alpha_pop_labels <- paste0("alpha_pop, cohort=", ref_cohort_years)
 gamma_pop_labels <- paste0("gamma_pop, cohort=", ref_cohort_years)
 
 generate_traceplot_function(m_alpha_pop, alpha_pop_labels, ncol_facet = 2)
-ggsave("./figures_sep22_2026/continuous_cohort_figs/alpha_pop_traceplot_RWcohort_expanded.png", width = 14, height = 10)
+ggsave(paste0("./figures_sep22_2026/continuous_cohort_figs/alpha_pop_traceplot_RWcohort_expanded", rw_out_tag, ".png"), width = 14, height = 10)
 generate_traceplot_function(m_gamma_pop, gamma_pop_labels, ncol_facet = 2)
-ggsave("./figures_sep22_2026/continuous_cohort_figs/gamma_pop_traceplot_RWcohort_expanded.png", width = 14, height = 10)
+ggsave(paste0("./figures_sep22_2026/continuous_cohort_figs/gamma_pop_traceplot_RWcohort_expanded", rw_out_tag, ".png"), width = 14, height = 10)
 generate_densplot_function(m_alpha_pop, alpha_pop_labels, ncol_facet = 2)
-ggsave("./figures_sep22_2026/continuous_cohort_figs/alpha_pop_densplot_RWcohort_expanded.png", width = 14, height = 10)
+ggsave(paste0("./figures_sep22_2026/continuous_cohort_figs/alpha_pop_densplot_RWcohort_expanded", rw_out_tag, ".png"), width = 14, height = 10)
 generate_densplot_function(m_gamma_pop, gamma_pop_labels, ncol_facet = 2)
-ggsave("./figures_sep22_2026/continuous_cohort_figs/gamma_pop_densplot_RWcohort_expanded.png", width = 14, height = 10)
+ggsave(paste0("./figures_sep22_2026/continuous_cohort_figs/gamma_pop_densplot_RWcohort_expanded", rw_out_tag, ".png"), width = 14, height = 10)
 
 for (r in 1:n_races) {
   m_alpha_dev_r <- mat_all[, paste0("rw_alpha_dev[", r, ",", ref_cohort_bins, "]"), drop = FALSE]
@@ -939,13 +974,13 @@ for (r in 1:n_races) {
   race_short_r <- race_short_labels[r]  # e.g. "AIAN", not "AI/AN" -- a literal "/" would break the output path
 
   generate_traceplot_function(m_alpha_dev_r, alpha_dev_labels, ncol_facet = 2)
-  ggsave(paste0("./figures_sep22_2026/continuous_cohort_figs/alpha_dev_traceplot_", race_short_r, "_RWcohort_expanded.png"), width = 14, height = 10)
+  ggsave(paste0("./figures_sep22_2026/continuous_cohort_figs/alpha_dev_traceplot_", race_short_r, "_RWcohort_expanded", rw_out_tag, ".png"), width = 14, height = 10)
   generate_traceplot_function(m_gamma_dev_r, gamma_dev_labels, ncol_facet = 2)
-  ggsave(paste0("./figures_sep22_2026/continuous_cohort_figs/gamma_dev_traceplot_", race_short_r, "_RWcohort_expanded.png"), width = 14, height = 10)
+  ggsave(paste0("./figures_sep22_2026/continuous_cohort_figs/gamma_dev_traceplot_", race_short_r, "_RWcohort_expanded", rw_out_tag, ".png"), width = 14, height = 10)
   generate_densplot_function(m_alpha_dev_r, alpha_dev_labels, ncol_facet = 2)
-  ggsave(paste0("./figures_sep22_2026/continuous_cohort_figs/alpha_dev_densplot_", race_short_r, "_RWcohort_expanded.png"), width = 14, height = 10)
+  ggsave(paste0("./figures_sep22_2026/continuous_cohort_figs/alpha_dev_densplot_", race_short_r, "_RWcohort_expanded", rw_out_tag, ".png"), width = 14, height = 10)
   generate_densplot_function(m_gamma_dev_r, gamma_dev_labels, ncol_facet = 2)
-  ggsave(paste0("./figures_sep22_2026/continuous_cohort_figs/gamma_dev_densplot_", race_short_r, "_RWcohort_expanded.png"), width = 14, height = 10)
+  ggsave(paste0("./figures_sep22_2026/continuous_cohort_figs/gamma_dev_densplot_", race_short_r, "_RWcohort_expanded", rw_out_tag, ".png"), width = 14, height = 10)
 }
 
 gelman_conv <- cluster_fit$gelman_conv
@@ -957,7 +992,7 @@ gelman_multivariate_PSRF$param <- c("mu_alpha0", "mu_gamma0",
                                      "sd_rw_dev_gamma", "sd_study")
 save_psrf_table(cbind.data.frame(parameter = gelman_multivariate_PSRF$param,
                                  PSRF = gelman_multivariate_PSRF$PSRF),
-                "./figures_sep22_2026/continuous_cohort_figs/multivariate_PSRF_RW_cohort_expanded.png")
+                paste0("./figures_sep22_2026/continuous_cohort_figs/multivariate_PSRF_RW_cohort_expanded", rw_out_tag, ".png"))
 
 gelman_par <- cluster_fit$gelman_par
 gelman_univariate_PSRF <- as.data.frame(gelman_par$psrf[, 1])
@@ -968,6 +1003,6 @@ gelman_univariate_PSRF$param <- c("log_alpha0_H", "log_alpha0_AIAN", "log_alpha0
                                    "log_gamma0_NHB", "log_gamma0_NHW")
 save_psrf_table(cbind.data.frame(parameter = gelman_univariate_PSRF$param,
                                  PSRF = gelman_univariate_PSRF$PSRF),
-                "./figures_sep22_2026/continuous_cohort_figs/univariate_PSRFF_RW_cohort_expanded.png")
+                paste0("./figures_sep22_2026/continuous_cohort_figs/univariate_PSRFF_RW_cohort_expanded", rw_out_tag, ".png"))
 
 
