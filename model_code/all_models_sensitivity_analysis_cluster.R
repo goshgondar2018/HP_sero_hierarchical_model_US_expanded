@@ -106,7 +106,6 @@ rw_data <- c(base_data_continuous, list(
   rw_init_tau = RW_INIT_TAU
 ))
 
-## observed birth-cohort years; element t is the year for rw_*[cohort_idx == t]
 cohort_years <- sort(unique(round(data_model_filtered$birth_cohort)))
 #saveRDS(cohort_years, file.path(out_dir, "cohort_years.rds"))
 
