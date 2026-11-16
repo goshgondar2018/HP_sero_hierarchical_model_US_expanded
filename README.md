@@ -19,7 +19,7 @@ Without them those tables are still written as CSV.
 
 ## 1. data
 
-- df_hp_usa_w_final.Rdata: Meta-analytic serological dataset drawing from data provided in McMahon et al., 2025 and select additional studies. Dataset includes multiple fields related to study-specific features & results. HP denotes # testing positive by study subgroup. `total` (== `hp_denom`) is the number actually assayed and is the binomial denominator used by the models; `subgroup_n` is the number enrolled and differs from it for three rows (see [NEWS.md](NEWS.md))
+- df_hp_usa_w_final_unweighted_nhanes.Rdata: Meta-analytic serological dataset drawing from data provided in McMahon et al., 2025 and select additional studies. Dataset includes multiple fields related to study-specific features & results. HP denotes # testing positive by study subgroup. `total` (== `hp_denom`) is the number actually assayed and is the binomial denominator used by the models. Use unweighted counts for NHANES studies
 - HPintheUS_WorkingFile_V12_20230727.xlsx: Co-author-curated working file behind the scoping review (McMahon et al., 2025), used to validate `df_hp_usa_w_final.Rdata`. The "Long HP data" sheet's `viz_flag_race_eth_seer_comb` column is the inclusion flag for the five-group SEER race/ethnicity categorization used in this repository's models (1 = include, 0 = exclude)
 
 ## 2. model_code
