@@ -46,13 +46,13 @@ data_model_filtered <- data_model_complete %>%
 total_pop = sum(data_model_filtered$total)
 
 # observed prevalence data points
-## pool by counts, rather than by averaging subgroup prevalences.
 df_p_curves_obs <- data_model_filtered %>%
   filter(age > 0) %>%
   mutate(era     = factor(ifelse(birth_cohort_cat == 0, "Pre-1960", "1960+"),
                           levels = c("Pre-1960", "1960+"))) %>%
   mutate(study_id_NHANES_indicator=ifelse(study_id=="NHANES1994"|study_id=="NHANES2000",'NHANES','OtherData'))%>%
   group_by(race_fac, era, age = round(age),study_id_NHANES_indicator) %>%
+  # pool by total counts (HP and total pop) in that age & subgroup, rather than average prevalence estimates
   summarise(n_cell = sum(total, na.rm = TRUE),
             y_cell = sum(HP,    na.rm = TRUE),
             Mean   = y_cell / n_cell,
@@ -235,7 +235,7 @@ summarize_max_prev_IOD <- function(mat, era_label, referent = "NHW") {
   )
 }
 
-# change in maximum prevalence between eras, computed per draw
+# Change in maximum prevalence between eras, computed per draw
 summarize_prev_change <- function(mat_pre, mat_post) {
   mat_pre  <- as.matrix(mat_pre);  rownames(mat_pre)  <- race_labels
   mat_post <- as.matrix(mat_post); rownames(mat_post) <- race_labels
@@ -503,10 +503,7 @@ process_model <- function(model_name, cfg) {
   ggsave(paste0("./figures_sep22_2026/binary_cohort_figs/prev_curves_by_race_era_", tag, ".png"), width = 12, height = 8)
 
   max_prev <- df_p_hat_race_final %>% filter(age == fin_age) %>%
-    mutate(era = factor(era, levels = era_labels))%>%
-    mutate(Mean=Mean*100)%>%
-    mutate(LB=LB*100)%>%
-    mutate(UB=UB*100)
+    mutate(era = factor(era, levels = era_labels))
 
   ggplot(max_prev, aes(x = race, y = Mean, color = race, ymin = LB, ymax = UB, # color = era
                         shape = era)) + # group = era
@@ -750,16 +747,13 @@ for (model_name in names(model_configs)) {
 
 # *****************************************************************************
 # Effective sample size, adjusted for beta-binomial overdispersion (theta),
-# computed for every model in model_configs (not just the selected one).
+# computed for every model in model_configs .
 #
 # For y ~ BetaBinomial(n, p*theta, (1-p)*theta), Var(y) is inflated relative to
 # a plain Binomial(n, p) by a design effect DEFF = (n + theta) / (1 + theta).
 # The effective sample size is the plain-binomial n that would give the same
 # precision: n_eff = n / DEFF = n*(1 + theta) / (n + theta), computed per row
-# and per posterior draw of theta, then summed across rows -- same structure
-# as total_pop, but downweighted for between-study/subgroup overdispersion.
-# The underlying data (and so total_pop) is the same for every model; only
-# theta -- and so eff_n -- varies by model.
+# and per posterior draw of theta, then summed across rows 
 # *****************************************************************************
 compute_effective_n <- function(fit_path, n_vec) {
   fit_obj <- readRDS(fit_path)
